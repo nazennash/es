@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getDatabase, ref, set, get, onValue, off } from 'firebase/database';
 import { auth } from '../firebase';
@@ -8,6 +8,8 @@ import MultiplayerManager from './MultiplayerManager';
 import PuzzlePieceManager from './PuzzlePieceManager';
 
 const PuzzlePage = () => {
+  const containerRef = useRef(null);
+  const [containerDimensions, setContainerDimensions] = useState(null);
   const [puzzleData, setPuzzleData] = useState({
     imageUrl: null,
     dimensions: null,
@@ -23,6 +25,27 @@ const PuzzlePage = () => {
   const { puzzleId } = useParams();
   const navigate = useNavigate();
   const isHost = puzzleData.hostId === auth.currentUser?.uid;
+
+  // Handle container measurements
+  useEffect(() => {
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        setContainerDimensions({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight
+        });
+      }
+    };
+
+    // Initial measurement
+    updateDimensions();
+
+    // Add resize listener
+    window.addEventListener('resize', updateDimensions);
+
+    // Cleanup
+    return () => window.removeEventListener('resize', updateDimensions);
+  }, []);
 
   useEffect(() => {
     let puzzleRef;
@@ -181,7 +204,10 @@ const PuzzlePage = () => {
   }
 
   return (
-    <div className="puzzle-page min-h-screen bg-gray-50 p-4">
+    <div 
+      ref={containerRef}
+      className="puzzle-page min-h-screen bg-gray-50 p-4"
+    >
       {isHost && !puzzleData.imageUrl && (
         <div className="max-w-xl mx-auto pt-8">
           <h2 className="text-2xl font-bold mb-4">Create New Puzzle</h2>
@@ -189,11 +215,12 @@ const PuzzlePage = () => {
         </div>
       )}
 
-      {puzzleData.imageUrl && (
+      {puzzleData.imageUrl && containerDimensions && (
         <div className="puzzle-container relative">
           <PuzzlePieceManager
             imageUrl={puzzleData.imageUrl}
             dimensions={puzzleData.dimensions}
+            containerDimensions={containerDimensions}
             onPiecePlace={handlePiecePlace}
             difficulty={3}
           />

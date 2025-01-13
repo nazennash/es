@@ -161,7 +161,7 @@ const App = () => {
               element={<PrivateRoute element={CulturalPuzzle} />}
             />
             <Route
-              path="/puzzle/:puzzleId"
+              path="/puzzle/:puzzleId?"
               element={<PrivateRoute element={PuzzlePage} />}
             />
             <Route

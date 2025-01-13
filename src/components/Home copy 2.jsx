@@ -54,10 +54,7 @@ const Home = ({ user }) => {
   const handleStartPuzzle = (type) => {
     switch(type) {
       case 'custom':
-        // const puzzleId = `puzzle-${Date.now()}`;
-        // navigate(`/puzzle/${puzzleId}`);
-        const newPuzzleId = `puzzle-${Date.now()}`;
-        navigate(`/puzzle/${newPuzzleId}`, { replace: true });
+        navigate('/puzzle/custom');
         break;
       case 'cultural':
         navigate('/puzzle/cultural');
@@ -72,7 +69,6 @@ const Home = ({ user }) => {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Header Section */}
       <div className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex justify-between items-center">
@@ -94,9 +90,7 @@ const Home = ({ user }) => {
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Quick Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900">Puzzles Completed</h3>
@@ -114,7 +108,6 @@ const Home = ({ user }) => {
           </div>
         </div>
 
-        {/* Start New Puzzle Section */}
         <div className="bg-white rounded-lg shadow mb-8">
           <div className="p-6">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Start New Puzzle</h2>
@@ -150,7 +143,6 @@ const Home = ({ user }) => {
           </div>
         </div>
 
-        {/* Recent Puzzles */}
         <div className="bg-white rounded-lg shadow">
           <div className="p-6">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Recent Puzzles</h2>

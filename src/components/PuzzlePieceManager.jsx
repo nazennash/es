@@ -1,7 +1,7 @@
-// src/components/PuzzlePieceManager.jsx
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { DragControls } from 'three/examples/jsm/controls/DragControls';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 export class PuzzlePiece {
   constructor(geometry, material, position, originalPosition) {
@@ -13,7 +13,7 @@ export class PuzzlePiece {
 
   isNearOriginalPosition() {
     const distance = this.mesh.position.distanceTo(this.originalPosition);
-    return distance < 0.5; 
+    return distance < 0.5;
   }
 
   snapToPosition() {
@@ -22,143 +22,189 @@ export class PuzzlePiece {
   }
 }
 
-const PuzzlePieceManager = ({ imageUrl, difficulty = 3, onPiecePlace }) => {
+const PuzzlePieceManager = ({ imageUrl, difficulty = 3, onPiecePlace, onComplete }) => {
   const containerRef = useRef(null);
   const piecesRef = useRef([]);
   const controlsRef = useRef(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    
-    // Create puzzle pieces from image
-    const createPuzzlePieces = async () => {
-      const texture = await new THREE.TextureLoader().loadAsync(imageUrl);
-      const aspectRatio = texture.image.width / texture.image.height;
-      
-      // Calculate piece dimensions
-      const pieceWidth = 1 / difficulty;
-      const pieceHeight = (1 / difficulty) * aspectRatio;
-      
-      // Create pieces with bas-relief effect
-      for (let i = 0; i < difficulty; i++) {
-        for (let j = 0; j < difficulty; j++) {
-          // Create geometry with height variation for bas-relief
-          const geometry = new THREE.PlaneGeometry(pieceWidth, pieceHeight, 10, 10);
-          const heightMap = generateHeightMap(texture, i, j, difficulty);
-          applyHeightMap(geometry, heightMap);
-          
-          // Create textured material
-          const material = new THREE.MeshPhongMaterial({
-            map: texture,
-            bumpMap: texture,
-            bumpScale: 0.1,
-          });
-          
-          // Calculate positions
-          const originalPosition = new THREE.Vector3(
-            (i - difficulty / 2) * pieceWidth,
-            (j - difficulty / 2) * pieceHeight,
-            0
-          );
-          
-          // Create piece with random initial position
-          const randomPosition = new THREE.Vector3(
-            Math.random() * 2 - 1,
-            Math.random() * 2 - 1,
-            0
-          );
-          
-          const piece = new PuzzlePiece(geometry, material, randomPosition, originalPosition);
-          piecesRef.current.push(piece);
-          scene.add(piece.mesh);
-        }
-      }
-    };
+    if (!imageUrl) {
+      setError('Image URL is required');
+      return;
+    }
 
-    // Set up drag controls
-    const setupDragControls = () => {
-      const pieces = piecesRef.current.map(piece => piece.mesh);
-      controlsRef.current = new DragControls(pieces, camera, renderer.domElement);
-      
-      controlsRef.current.addEventListener('dragstart', () => {
-        orbitControls.enabled = false;
-      });
-      
-      controlsRef.current.addEventListener('dragend', (event) => {
-        orbitControls.enabled = true;
-        const piece = piecesRef.current.find(p => p.mesh === event.object);
-        
-        if (piece && piece.isNearOriginalPosition()) {
-          piece.snapToPosition();
-          onPiecePlace();
-          
-          // Animate piece placement
-          const flashMaterial = piece.mesh.material.clone();
-          piece.mesh.material = flashMaterial;
-          flashMaterial.emissive.setHex(0x00ff00);
-          setTimeout(() => {
-            flashMaterial.emissive.setHex(0x000000);
-          }, 300);
-        }
-      });
-    };
+    let scene, camera, renderer, orbitControls;
 
-    // Initialize scene
-    const init = async () => {
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      containerRef.current.appendChild(renderer.domElement);
+    const initScene = () => {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xf0f0f0);
       
+      const container = containerRef.current;
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+
+      camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(width, height);
+      container.appendChild(renderer.domElement);
+
       camera.position.z = 5;
-      
+
       // Add lights
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
       scene.add(ambientLight);
-      
+
       const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
       directionalLight.position.set(5, 5, 5);
       scene.add(directionalLight);
-      
-      await createPuzzlePieces();
+
+      // Add orbit controls
+      orbitControls = new OrbitControls(camera, renderer.domElement);
+      orbitControls.enableDamping = true;
+      orbitControls.dampingFactor = 0.05;
+    };
+
+    const createPuzzlePieces = async () => {
+      try {
+        const texture = await new THREE.TextureLoader().loadAsync(imageUrl);
+        const aspectRatio = texture.image.width / texture.image.height;
+
+        const pieceWidth = 1 / difficulty;
+        const pieceHeight = (1 / difficulty) * aspectRatio;
+
+        for (let i = 0; i < difficulty; i++) {
+          for (let j = 0; j < difficulty; j++) {
+            const geometry = new THREE.PlaneGeometry(pieceWidth, pieceHeight, 10, 10);
+            const material = new THREE.MeshPhongMaterial({
+              map: texture,
+              bumpMap: texture,
+              bumpScale: 0.1,
+            });
+
+            // Set UV mapping for each piece
+            const uvs = geometry.attributes.uv;
+            const positions = uvs.array;
+            for (let k = 0; k < positions.length; k += 2) {
+              positions[k] = (positions[k] + i) / difficulty;
+              positions[k + 1] = (positions[k + 1] + j) / difficulty;
+            }
+
+            const originalPosition = new THREE.Vector3(
+              (i - difficulty / 2) * pieceWidth,
+              (j - difficulty / 2) * pieceHeight,
+              0
+            );
+
+            const randomPosition = new THREE.Vector3(
+              Math.random() * 2 - 1,
+              Math.random() * 2 - 1,
+              0
+            );
+
+            const piece = new PuzzlePiece(geometry, material, randomPosition, originalPosition);
+            piecesRef.current.push(piece);
+            scene.add(piece.mesh);
+          }
+        }
+        setIsLoading(false);
+      } catch (err) {
+        setError(`Error creating puzzle pieces: ${err.message}`);
+        setIsLoading(false);
+      }
+    };
+
+    const setupDragControls = () => {
+      const pieces = piecesRef.current.map(piece => piece.mesh);
+      controlsRef.current = new DragControls(pieces, camera, renderer.domElement);
+
+      controlsRef.current.addEventListener('dragstart', () => {
+        orbitControls.enabled = false;
+      });
+
+      controlsRef.current.addEventListener('dragend', (event) => {
+        orbitControls.enabled = true;
+        const piece = piecesRef.current.find(p => p.mesh === event.object);
+
+        if (piece && piece.isNearOriginalPosition()) {
+          piece.snapToPosition();
+          onPiecePlace();
+
+          // Check if puzzle is complete
+          const isComplete = piecesRef.current.every(p => p.isPlaced);
+          if (isComplete && onComplete) {
+            onComplete();
+          }
+        }
+      });
+    };
+
+    const animate = () => {
+      if (!renderer) return;
+      requestAnimationFrame(animate);
+      orbitControls?.update();
+      renderer.render(scene, camera);
+    };
+
+    const handleResize = () => {
+      if (camera && renderer && containerRef.current) {
+        const container = containerRef.current;
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+      }
+    };
+
+    try {
+      initScene();
+      createPuzzlePieces();
       setupDragControls();
-      
-      // Animation loop
-      const animate = () => {
-        requestAnimationFrame(animate);
-        renderer.render(scene, camera);
-      };
       animate();
-    };
 
-    init();
+      window.addEventListener('resize', handleResize);
 
-    return () => {
-      containerRef.current?.removeChild(renderer.domElement);
-      piecesRef.current = [];
-    };
-  }, [imageUrl, difficulty, onPiecePlace]);
+      return () => {
+        window.removeEventListener('resize', handleResize);
+        if (containerRef.current && renderer.domElement) {
+          containerRef.current.removeChild(renderer.domElement);
+        }
+        piecesRef.current.forEach(piece => {
+          piece.mesh.geometry.dispose();
+          piece.mesh.material.dispose();
+        });
+        renderer.dispose();
+      };
+    } catch (err) {
+      setError(`Error initializing scene: ${err.message}`);
+    }
+  }, [imageUrl, difficulty, onPiecePlace, onComplete]);
 
-  return <div ref={containerRef} />;
-};
-
-// Helper functions
-const generateHeightMap = (texture, x, y, difficulty) => {
-  // Implementation of height map generation based on image intensity
-  // This creates the bas-relief effect
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  // ... height map generation logic
-  return new Float32Array(/* height data */);
-};
-
-const applyHeightMap = (geometry, heightMap) => {
-  // Apply height map to geometry vertices
-  const positions = geometry.attributes.position.array;
-  for (let i = 0; i < positions.length; i += 3) {
-    positions[i + 2] = heightMap[i / 3] * 0.1; // Z-axis modification
+  if (error) {
+    return (
+      <div className="error-container p-4 bg-red-50 border border-red-200 rounded-lg">
+        <p className="text-red-600">{error}</p>
+      </div>
+    );
   }
-  geometry.attributes.position.needsUpdate = true;
+
+  if (isLoading) {
+    return (
+      <div className="loading-container flex items-center justify-center h-full">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      ref={containerRef} 
+      className="puzzle-piece-manager w-full h-full min-h-[500px]"
+    />
+  );
 };
 
 export default PuzzlePieceManager;
