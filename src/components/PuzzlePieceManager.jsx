@@ -13,7 +13,7 @@ export class PuzzlePiece {
 
   isNearOriginalPosition() {
     const distance = this.mesh.position.distanceTo(this.originalPosition);
-    return distance < 0.5; // Threshold for snapping
+    return distance < 0.5; 
   }
 
   snapToPosition() {

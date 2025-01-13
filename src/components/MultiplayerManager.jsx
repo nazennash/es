@@ -1,60 +1,92 @@
-// src/components/MultiplayerManager.jsx
 import React, { useEffect, useState } from 'react';
-import { io } from 'socket.io-client';
-import { getDatabase, ref, onValue, set } from 'firebase/database';
+import { getDatabase, ref, onValue, set, update, off } from 'firebase/database';
 import { generateInviteLink } from '../utils/inviteHelper';
 
 const MultiplayerManager = ({ puzzleId, isHost, onPieceMove, onPlayerJoin }) => {
-  const [socket, setSocket] = useState(null);
   const [players, setPlayers] = useState([]);
   const [inviteLink, setInviteLink] = useState('');
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Set up Firebase Realtime Database for puzzle state
-    const db = getDatabase();
-    const puzzleRef = ref(db, `puzzles/${puzzleId}`);
+    try {
+      const db = getDatabase();
+      const puzzleRef = ref(db, `puzzles/${puzzleId}`);
+      const playersRef = ref(db, `puzzles/${puzzleId}/players`);
+      const piecesRef = ref(db, `puzzles/${puzzleId}/pieces`);
 
-    // Set up Socket.IO connection
-    const newSocket = io(process.env.REACT_APP_SOCKET_SERVER);
-    setSocket(newSocket);
+      // Set up initial puzzle state if host
+      if (isHost) {
+        const link = generateInviteLink(puzzleId);
+        setInviteLink(link);
+        
+        set(puzzleRef, {
+          pieces: [],
+          players: [],
+          status: 'active'
+        }).catch(err => {
+          console.error('Error initializing puzzle state:', err);
+          setError('Failed to initialize puzzle state');
+        });
+      }
 
-    if (isHost) {
-      // Create new puzzle session
-      const link = generateInviteLink(puzzleId);
-      setInviteLink(link);
-      
-      // Initialize puzzle state
-      set(puzzleRef, {
-        pieces: [],
-        players: [],
-        status: 'active'
+      // Listen for player changes
+      onValue(playersRef, (snapshot) => {
+        const playersData = snapshot.val();
+        if (playersData) {
+          const playersList = Object.values(playersData);
+          setPlayers(playersList);
+          
+          // Notify about new players
+          const lastPlayer = playersList[playersList.length - 1];
+          if (lastPlayer) {
+            onPlayerJoin(lastPlayer);
+          }
+        }
       });
+
+      // Listen for piece movements
+      onValue(piecesRef, (snapshot) => {
+        const piecesData = snapshot.val();
+        if (piecesData) {
+          Object.entries(piecesData).forEach(([pieceId, pieceData]) => {
+            if (pieceData.lastUpdate > (Date.now() - 1000)) { // Only process recent updates
+              onPieceMove(pieceId, pieceData.position, pieceData.rotation);
+            }
+          });
+        }
+      });
+
+      // Cleanup listeners
+      return () => {
+        off(playersRef);
+        off(piecesRef);
+      };
+    } catch (err) {
+      console.error('Error setting up multiplayer:', err);
+      setError('Failed to initialize multiplayer');
     }
-
-    // Listen for player movements
-    newSocket.on('piece-moved', (data) => {
-      onPieceMove(data.pieceId, data.position, data.rotation);
-    });
-
-    // Listen for player joins
-    newSocket.on('player-joined', (player) => {
-      setPlayers(prev => [...prev, player]);
-      onPlayerJoin(player);
-    });
-
-    return () => {
-      newSocket.disconnect();
-    };
   }, [puzzleId, isHost]);
 
   const movePiece = (pieceId, position, rotation) => {
-    socket.emit('move-piece', {
-      puzzleId,
-      pieceId,
+    const db = getDatabase();
+    const pieceRef = ref(db, `puzzles/${puzzleId}/pieces/${pieceId}`);
+    
+    update(pieceRef, {
       position,
-      rotation
+      rotation,
+      lastUpdate: Date.now()
+    }).catch(err => {
+      console.error('Error updating piece position:', err);
     });
   };
+
+  if (error) {
+    return (
+      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+        <p className="text-red-600">{error}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="multiplayer-container">
@@ -69,8 +101,15 @@ const MultiplayerManager = ({ puzzleId, isHost, onPieceMove, onPlayerJoin }) => 
               className="flex-1 p-2 border rounded"
             />
             <button
-              onClick={() => navigator.clipboard.writeText(inviteLink)}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(inviteLink);
+                  // Could add toast notification here
+                } catch (err) {
+                  console.error('Failed to copy:', err);
+                }
+              }}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
             >
               Copy
             </button>
@@ -79,21 +118,28 @@ const MultiplayerManager = ({ puzzleId, isHost, onPieceMove, onPlayerJoin }) => 
       )}
 
       <div className="players-list p-4 bg-white rounded-lg shadow">
-        <h3 className="text-lg font-semibold mb-2">Current Players</h3>
-        <div className="space-y-2">
-          {players.map(player => (
-            <div
-              key={player.id}
-              className="flex items-center space-x-2 p-2 bg-gray-50 rounded"
-            >
+        <h3 className="text-lg font-semibold mb-2">
+          Current Players ({players.length})
+        </h3>
+        {players.length === 0 ? (
+          <p className="text-gray-500">No other players yet</p>
+        ) : (
+          <div className="space-y-2">
+            {players.map(player => (
               <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: player.color }}
-              />
-              <span>{player.name}</span>
-            </div>
-          ))}
-        </div>
+                key={player.id}
+                className="flex items-center space-x-2 p-2 bg-gray-50 rounded"
+              >
+                <div
+                  className="w-3 h-3 rounded-full"
+                  style={{ backgroundColor: player.color }}
+                  aria-hidden="true"
+                />
+                <span>{player.name || 'Anonymous Player'}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

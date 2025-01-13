@@ -11,7 +11,12 @@ import PuzzleViewer from './components/PuzzleViewer';
 import MultiplayerManager from './components/MultiplayerManager';
 import Leaderboard from './components/Leaderboard';
 import Navbar from './components/Navbar';
+import { useParams } from 'react-router-dom';
+import PuzzlePage from './components/PuzzlePage';
+import PuzzleImageUploader from './components/PuzzleImageUploader';
+
 const App = () => {
+  
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -29,6 +34,36 @@ const App = () => {
 
     return () => unsubscribe();
   }, []);
+
+
+  const MultiplayerPuzzle = () => {
+    const { sessionId } = useParams();
+    return (
+      <div className="puzzle-container">
+        <PuzzleViewer isMultiPlayer={true} />
+        <MultiplayerManager 
+          puzzleId={sessionId}
+          isHost={false}
+        />
+      </div>
+    );
+  };
+
+  const CulturalPuzzle = () => {
+    const { id } = useParams();
+    const puzzle = culturalPuzzles.find(p => p.id === id);
+    
+    return (
+      <div className="puzzle-container">
+        <PuzzleViewer 
+          modelUrl={puzzle?.modelUrl}
+          isPredesigned={true}
+        />
+        <MultiplayerManager puzzleId={id} />
+        <Leaderboard puzzleId={id} />
+      </div>
+    );
+  };
 
   // Pre-defined cultural theme puzzles
   const culturalPuzzles = [
@@ -69,17 +104,43 @@ const App = () => {
             path="/" 
             element={
               user ? (
-                <Navigate to="/dashboard" replace />
+                <Home user={user} />
               ) : (
                 <Navigate to="/auth" replace />
               )
             } 
           />
+
+          {/* <Route 
+            path="/" 
+            element={
+              user ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            } 
+          /> */}
+
           <Route 
             path="/auth" 
-            element={user ? <Navigate to="/dashboard" replace /> : <Auth />} 
+            element={user ? <Navigate to="/" replace /> : <Auth />} 
           />
+          {/* <Route 
+            path="/auth" 
+            element={user ? <Navigate to="/dashboard" replace /> : <Auth />} 
+          /> */}
+
           <Route
+            path="/puzzle/cultural/:id"
+            element={
+              <PrivateRoute 
+                element={CulturalPuzzle}
+              />
+            }
+          />
+
+          {/* <Route
             path="/dashboard"
             element={
               <PrivateRoute 
@@ -91,13 +152,60 @@ const App = () => {
                 )} 
               />
             }
+          /> */}
+
+          {/* <Route
+            path="/dashboard"
+            element={
+              <PrivateRoute 
+                element={() => (
+                  <Dashboard 
+                    user={user} 
+                    culturalPuzzles={culturalPuzzles}
+                  />
+                )} 
+              />
+            }
+          /> */}
+
+          <Route
+            path="/puzzle/cultural"
+            element={
+              <PrivateRoute 
+                element={() => (
+                  <div className="cultural-puzzles-container">
+                    <h2 className="text-2xl font-bold mb-4">Cultural Puzzles</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {culturalPuzzles.map(puzzle => (
+                        <div key={puzzle.id} className="puzzle-card">
+                          <img src={puzzle.thumbnail} alt={puzzle.name} className="w-full h-48 object-cover mb-2" />
+                          <h3 className="text-xl font-semibold">{puzzle.name}</h3>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )} 
+              />
+            }
           />
+
+          <Route
+            path="/puzzle/:puzzleId?"
+            element={
+              <PrivateRoute 
+                element={PuzzlePage}
+              />
+            }
+          />
+
           <Route
             path="/puzzle/custom"
             element={
               <PrivateRoute 
                 element={() => (
                   <div className="puzzle-container">
+                    <PuzzleImageUploader />
+                    {/* <PuzzlePage /> */}
                     <PuzzleViewer />
                     <MultiplayerManager puzzleId="custom" />
                     <Leaderboard puzzleId="custom" />
@@ -127,6 +235,15 @@ const App = () => {
             }
           />
           <Route
+  path="/puzzle/multiplayer/:sessionId"
+  element={
+    <PrivateRoute 
+      element={MultiplayerPuzzle}
+    />
+  }
+/>
+
+{/* <Route
             path="/puzzle/multiplayer/:sessionId"
             element={
               <PrivateRoute 
@@ -141,7 +258,9 @@ const App = () => {
                 )} 
               />
             }
-          />
+          /> */}
+
+
           <Route
             path="/leaderboard"
             element={
