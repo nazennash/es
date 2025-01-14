@@ -61,12 +61,14 @@ const Home = ({ user }) => {
         navigate('/puzzle/cultural');
         break;
       case 'multiplayer':
-        navigate('/puzzle/multiplayer/new', { 
-          state: { 
-            isHost: true,
-            userId: user.uid 
-          }
-        });
+        const sessionId = `session-${Date.now()}`;
+        navigate(`/puzzle/multiplayer/${sessionId}`, { replace: true }, { state: { isHost: true, userId: user.uid } });
+        // navigate('/puzzle/multiplayer/new', { 
+          // state: { 
+          //   isHost: true,
+          //   userId: user.uid 
+          // }
+        // });
         break;
       default:
         break;

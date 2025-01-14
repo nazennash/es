@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ZoomIn, ZoomOut, RotateCw, RotateCcw, RefreshCw } from 'lucide-react';
 import { getFirestore, collection, addDoc } from 'firebase/firestore';
 
@@ -15,27 +15,11 @@ const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onCompl
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [gridDimensions, setGridDimensions] = useState({ width: 0, height: 0 });
-  const [correctPlacements, setCorrectPlacements] = useState(new Set());
   const [cellDimensions, setCellDimensions] = useState({ width: 0, height: 0 });
+  const [correctPlacements, setCorrectPlacements] = useState(new Set());
   const db = getFirestore();
 
-  useEffect(() => {
-    const updateGridDimensions = () => {
-      const gridElement = document.querySelector('.puzzle-grid');
-      if (gridElement) {
-        setGridDimensions({
-          width: gridElement.offsetWidth,
-          height: gridElement.offsetHeight 
-        });
-      }
-    };
-
-    updateGridDimensions();
-    window.addEventListener('resize', updateGridDimensions);
-    return () => window.removeEventListener('resize', updateGridDimensions);
-  }, [difficulty]);
-
-  const showMessage = useCallback((text, type = 'info', duration = 3000) => {
+  const showMessage = (text, type = 'info', duration = 3000) => {
     setMessage(text);
     setMessageType(type);
     if (duration) {
@@ -44,17 +28,17 @@ const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onCompl
         setMessageType('');
       }, duration);
     }
-  }, []);
+  };
 
-  const isPieceCorrect = useCallback((piece, currentX, currentY) => {
+  const isPieceCorrect = (piece, currentX, currentY) => {
     return (
       currentX === piece.correct.x &&
       currentY === piece.correct.y &&
       piece.rotation % 360 === 0
     );
-  }, []);
+  };
 
-  const initializePuzzle = useCallback(() => {
+  const initializePuzzle = () => {
     setIsLoading(true);
     setCorrectPlacements(new Set());
     setTimeElapsed(0);
@@ -62,36 +46,29 @@ const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onCompl
     const img = new Image();
     img.onload = () => {
       setImageSize({ width: img.width, height: img.height });
-      const aspectRatio = img.width / img.height;
-      
-      // Calculate piece dimensions based on aspect ratio
-      let pieceWidth, pieceHeight;
-      if (aspectRatio >= 1) {
-        pieceWidth = img.width / difficulty;
-        pieceHeight = pieceWidth / aspectRatio;
-      } else {
-        pieceHeight = img.height / difficulty;
-        pieceWidth = pieceHeight * aspectRatio;
-      }
+      const pieceWidth = img.width / difficulty;
+      const pieceHeight = img.height / difficulty;
       
       const newPieces = [];
       for (let y = 0; y < difficulty; y++) {
         for (let x = 0; x < difficulty; x++) {
-          newPieces.push({
-            id: `piece-${x}-${y}`,
-            correct: { x, y },
-            current: { 
-              x: Math.floor(Math.random() * difficulty), 
-              y: Math.floor(Math.random() * difficulty) 
-            },
-            rotation: Math.floor(Math.random() * 4) * 90,
-            dimensions: {
-              width: pieceWidth,
-              height: pieceHeight,
-              offsetX: x * pieceWidth,
-              offsetY: y * pieceHeight
-            }
-          });
+          if ((x * pieceWidth < img.width) && (y * pieceHeight < img.height)) {
+            newPieces.push({
+              id: `piece-${x}-${y}`,
+              correct: { x, y },
+              current: { 
+                x: Math.floor(Math.random() * difficulty), 
+                y: Math.floor(Math.random() * difficulty) 
+              },
+              rotation: Math.floor(Math.random() * 4) * 90,
+              dimensions: {
+                width: pieceWidth,
+                height: pieceHeight,
+                offsetX: x * pieceWidth,
+                offsetY: y * pieceHeight
+              }
+            });
+          }
         }
       }
       setPieces(newPieces);
@@ -105,11 +82,11 @@ const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onCompl
       showMessage('Failed to load image. Please try again.', 'error');
     };
     img.src = imageUrl;
-  }, [difficulty, imageUrl, showMessage]);
+  };
 
   useEffect(() => {
     initializePuzzle();
-  }, [initializePuzzle]);
+  }, [difficulty, imageUrl]);
 
   useEffect(() => {
     if (correctPlacements.size === pieces.length && pieces.length > 0) {
@@ -383,7 +360,7 @@ const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onCompl
                               ${draggedPiece?.id === piece.id ? 'opacity-50' : ''}`}
                             style={{
                               backgroundImage: `url(${imageUrl})`,
-                              backgroundSize: `${gridDimensions.width }px ${gridDimensions.height}px`,
+                              backgroundSize: `${gridDimensions.width}px ${gridDimensions.height}px`,
                               backgroundPosition: `-${piece.dimensions.offsetX}px -${piece.dimensions.offsetY}px`,
                               transform: `rotate(${piece.rotation}deg)`,
                               transformOrigin: 'center'

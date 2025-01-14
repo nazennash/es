@@ -195,17 +195,6 @@ const PuzzlePage = () => {
         <p className="text-gray-600">{puzzleData.imageUrl}</p>
       </div>
 
-      
-      {/* {puzzleData.imageUrl && (
-      <div className="max-w-xl mx-auto pt-8">
-        <h2 className="text-2xl font-bold mb-4">View Photo</h2>
-        <img src={puzzleData.imageUrl} alt="Puzzle" className="w-full h-auto" />
-      </div>
-      )} */}
-
-
-      
-
       {puzzleData.imageUrl && (
         <div className="puzzle-container relative">
           <PuzzlePieceManager
@@ -214,48 +203,7 @@ const PuzzlePage = () => {
             onPiecePlace={handlePiecePlace}
             difficulty={3}
             initialDifficulty={3}
-            // onPiecePlace={() => console.log('Piece placed correctly')}
-            // onComplete={({ completed, time, totalPieces }) => {
-            //   console.log(`Puzzle ${completed ? 'completed' : 'incomplete'}`);
-            //   console.log(`Time taken: ${Math.floor(time / 60)}m ${time % 60}s`);
-            //   console.log(`Total pieces: ${totalPieces}`);
-            // }}
           />
-          
-          {/* <div className="absolute top-4 right-4 z-10">
-            <MultiplayerManager
-              puzzleId={puzzleId}
-              isHost={isHost}
-              onPieceMove={handlePieceMove}
-              onPlayerJoin={handlePlayerJoin}
-              players={puzzleData.players}
-            />
-          </div> */}
-
-          {/* {puzzleData.completed && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
-              <div className="bg-white p-6 rounded-lg shadow-xl text-center">
-                <h3 className="text-2xl font-bold mb-4">🎉 Puzzle Completed!</h3>
-                <p className="mb-4 text-gray-600">
-                  Congratulations! You've completed the puzzle.
-                </p>
-                <div className="space-x-4">
-                  <button
-                    onClick={() => navigate('/')}
-                    className="px-6 py-3 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-                  >
-                    Return Home
-                  </button>
-                  <button
-                    onClick={() => navigate('/puzzle/new')}
-                    className="px-6 py-3 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
-                  >
-                    Start New Puzzle
-                  </button>
-                </div>
-              </div>
-            </div>
-          )} */}
         </div>
       )}
     </div>

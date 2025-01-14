@@ -1,310 +1,578 @@
 import React, { useState, useEffect } from 'react';
-import PuzzleImageUploader from './PuzzleImageUploader';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getDatabase, ref as dbRef, set, onValue, update, get } from 'firebase/database';
+import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Share2, Play, Users } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { LogOut, Home } from 'lucide-react';
 
-const MultiplayerPuzzle = ({ 
-  user = { id: 'demo-user', name: 'Demo Player' },
-  isHost = false,
-  onNavigate = () => {},
-  imageUrl = '',
-}) => {
-  const [gameId] = useState(`game-${Date.now()}`);
-  const [error, setError] = useState(null);
+const MultiplayerPuzzle = () => {
+  const [gameState, setGameState] = useState({
+    gameId: window.location.pathname.split('/').pop() || `game-${Date.now()}`,
+    imageUrl: '',
+    isHost: false,
+    difficulty: 3,
+    timer: 0,
+    imageSize: { width: 0, height: 0 }
+  });
+
   const [pieces, setPieces] = useState([]);
-  const [draggedPiece, setDraggedPiece] = useState(null);
-  const [selectedPiece, setSelectedPiece] = useState(null);
-  const [zoom, setZoom] = useState(1);
-  const [difficulty] = useState(3);
-  const [timer, setTimer] = useState(0);
+  const [players, setPlayers] = useState({});
   const [isGameStarted, setIsGameStarted] = useState(false);
-  const [players, setPlayers] = useState([
-    { id: user.id, name: user.name, color: '#4299e1', isHost, score: 0 }
-  ]);
-  
-  useEffect(() => {
-    if (isGameStarted) {
-      const interval = setInterval(() => {
-        setTimer(prev => prev + 1);
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [isGameStarted]);
 
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  const navigate = useNavigate();
+
+  const clearSession = async () => {
+    try {
+      // Remove player from the game
+      const updates = {};
+      updates[`games/${gameState.gameId}/players/${user.id}`] = null;
+      await update(dbRef(database), updates);
+
+      // Clear local storage
+      localStorage.removeItem('userId');
+      localStorage.removeItem('userName');
+
+      // Check if host and if there are other players
+      const gameRef = dbRef(database, `games/${gameState.gameId}`);
+      const snapshot = await get(gameRef);
+      const data = snapshot.val();
+      
+      if (gameState.isHost && (!data?.players || Object.keys(data.players).length === 0)) {
+        // If host is leaving and no other players, clear the entire game
+        await set(gameRef, null);
+      }
+
+      // Navigate to home
+      navigate('/');
+    } catch (err) {
+      console.error('Failed to clear session:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to clear session' }
+      }));
+    }
   };
 
-  const generateGameLink = () => {
-    const baseUrl = window.location.origin;
-    const timestamp = Date.now();
-    const currentTime = formatTime(timer);
-    return `${baseUrl}/puzzle/${gameId}?t=${timestamp}&timer=${currentTime}`;
+  const leaveSession = async () => {
+    try {
+      // Remove player from the game
+      const updates = {};
+      updates[`games/${gameState.gameId}/players/${user.id}`] = null;
+      await update(dbRef(database), updates);
+
+      // Navigate to home
+      navigate('/');
+    } catch (err) {
+      console.error('Failed to leave session:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to leave session' }
+      }));
+    }
+  };
+  
+  const [ui, setUi] = useState({
+    zoom: 1,
+    selectedPiece: null,
+    draggedPiece: null,
+    error: null,
+    showPlayers: true,
+    loading: true
+  });
+
+  const storage = getStorage();
+  const database = getDatabase();
+  const user = { 
+    id: localStorage.getItem('userId') || `user-${Date.now()}`, 
+    name: localStorage.getItem('userName') || `Player ${Math.floor(Math.random() * 1000)}` 
+  };
+
+  // Save user info to localStorage
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem('userId')) {
+        localStorage.setItem('userId', user.id);
+        localStorage.setItem('userName', user.name);
+      }
+    } catch (err) {
+      console.error('Failed to save user info to localStorage:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to save user information' }
+      }));
+    }
+  }, []);
+
+  // Initialize game and set up listeners
+  useEffect(() => {
+    let unsubscribe;
+    const gameRef = dbRef(database, `games/${gameState.gameId}`);
+    
+    const initializeGame = async () => {
+      try {
+        const snapshot = await get(gameRef);
+        const data = snapshot.val();
+        
+        if (!data) {
+          // New game - set up initial state
+          await set(gameRef, {
+            players: {
+              [user.id]: {
+                id: user.id,
+                name: user.name,
+                score: 0,
+                color: `#${Math.floor(Math.random()*16777215).toString(16)}`,
+                isHost: true
+              }
+            },
+            imageUrl: '',
+            isGameStarted: false,
+            timer: 0,
+            difficulty: gameState.difficulty
+          });
+          setGameState(prev => ({ ...prev, isHost: true }));
+        } else {
+          // Join existing game
+          if (!data.players?.[user.id]) {
+            const playerUpdate = {
+              [`players/${user.id}`]: {
+                id: user.id,
+                name: user.name,
+                score: 0,
+                color: `#${Math.floor(Math.random()*16777215).toString(16)}`,
+                isHost: false
+              }
+            };
+            await update(gameRef, playerUpdate);
+          }
+        }
+        setUi(prev => ({ ...prev, loading: false }));
+      } catch (err) {
+        console.error('Failed to initialize game:', err);
+        setUi(prev => ({
+          ...prev,
+          loading: false,
+          error: { type: 'error', message: 'Failed to initialize game' }
+        }));
+      }
+    };
+
+    // Set up real-time listeners
+    const setupListeners = () => {
+      unsubscribe = onValue(gameRef, (snapshot) => {
+        try {
+          const data = snapshot.val();
+          if (data) {
+            setGameState(prev => ({
+              ...prev,
+              imageUrl: data.imageUrl || '',
+              difficulty: data.difficulty || 3,
+              timer: data.timer || 0
+            }));
+            setPlayers(data.players || {});
+            setPieces(data.pieces || []);
+            setIsGameStarted(data.isGameStarted || false);
+          }
+        } catch (err) {
+          console.error('Error processing game update:', err);
+          setUi(prev => ({
+            ...prev,
+            error: { type: 'error', message: 'Failed to process game update' }
+          }));
+        }
+      }, (error) => {
+        console.error('Database listener error:', error);
+        setUi(prev => ({
+          ...prev,
+          error: { type: 'error', message: 'Lost connection to game' }
+        }));
+      });
+    };
+
+    initializeGame();
+    setupListeners();
+
+    // Cleanup
+    return () => {
+      if (unsubscribe) unsubscribe();
+      try {
+        // Remove player when they leave
+        const updates = {};
+        updates[`games/${gameState.gameId}/players/${user.id}`] = null;
+        update(dbRef(database), updates);
+      } catch (err) {
+        console.error('Error during cleanup:', err);
+      }
+    };
+  }, [gameState.gameId]);
+
+  const handleImageUpload = async (event) => {
+    if (!gameState.isHost) return;
+    
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUi(prev => ({ ...prev, loading: true, error: null }));
+      const imageRef = storageRef(storage, `puzzle-images/${gameState.gameId}/${file.name}`);
+      const snapshot = await uploadBytes(imageRef, file);
+      const url = await getDownloadURL(snapshot.ref);
+      
+      const img = new Image();
+      img.onload = async () => {
+        try {
+          const updates = {
+            [`games/${gameState.gameId}/imageUrl`]: url,
+            [`games/${gameState.gameId}/imageSize`]: {
+              width: img.width,
+              height: img.height
+            }
+          };
+          await update(dbRef(database), updates);
+          setUi(prev => ({ ...prev, loading: false }));
+        } catch (err) {
+          throw new Error('Failed to update game with image information');
+        }
+      };
+      img.onerror = () => {
+        throw new Error('Failed to load image');
+      };
+      img.src = url;
+    } catch (err) {
+      console.error('Image upload error:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: err.message || 'Failed to upload image' },
+        loading: false
+      }));
+    }
+  };
+
+  const initializePuzzle = async () => {
+    if (!gameState.imageUrl || !gameState.isHost) return;
+
+    try {
+      setUi(prev => ({ ...prev, loading: true, error: null }));
+      const newPieces = [];
+      for (let i = 0; i < gameState.difficulty; i++) {
+        for (let j = 0; j < gameState.difficulty; j++) {
+          newPieces.push({
+            id: `piece-${i}-${j}`,
+            correct: { x: i, y: j },
+            current: { 
+              x: Math.floor(Math.random() * gameState.difficulty), 
+              y: Math.floor(Math.random() * gameState.difficulty) 
+            },
+            rotation: Math.floor(Math.random() * 4) * 90,
+            isPlaced: false
+          });
+        }
+      }
+
+      const updates = {
+        [`games/${gameState.gameId}/pieces`]: newPieces,
+        [`games/${gameState.gameId}/isGameStarted`]: true,
+        [`games/${gameState.gameId}/timer`]: 0
+      };
+      await update(dbRef(database), updates);
+      setUi(prev => ({ ...prev, loading: false }));
+    } catch (err) {
+      console.error('Failed to initialize puzzle:', err);
+      setUi(prev => ({
+        ...prev,
+        loading: false,
+        error: { type: 'error', message: 'Failed to start game' }
+      }));
+    }
+  };
+
+  const handleDrop = async (x, y) => {
+    if (!ui.draggedPiece) return;
+
+    try {
+      const updatedPieces = pieces.map(p => {
+        if (p.id === ui.draggedPiece.id) {
+          const isCorrect = x === p.correct.x && 
+                           y === p.correct.y && 
+                           p.rotation % 360 === 0;
+          
+          return { ...p, current: { x, y }, isPlaced: isCorrect };
+        }
+        return p;
+      });
+
+      const updates = {};
+      updates[`games/${gameState.gameId}/pieces`] = updatedPieces;
+      
+      if (updatedPieces.find(p => p.id === ui.draggedPiece.id)?.isPlaced) {
+        updates[`games/${gameState.gameId}/players/${user.id}/score`] = 
+          ((players[user.id]?.score || 0) + 1);
+      }
+
+      await update(dbRef(database), updates);
+      setUi(prev => ({ ...prev, draggedPiece: null }));
+    } catch (err) {
+      console.error('Failed to update piece position:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to move piece' },
+        draggedPiece: null
+      }));
+    }
+  };
+
+  const handleRotate = async (direction) => {
+    if (!ui.selectedPiece) return;
+
+    try {
+      const updatedPieces = pieces.map(p => {
+        if (p.id === ui.selectedPiece.id) {
+          const newRotation = p.rotation + (direction === 'left' ? -90 : 90);
+          const isCorrect = p.correct.x === p.current.x && 
+                           p.correct.y === p.current.y && 
+                           newRotation % 360 === 0;
+          
+          return { ...p, rotation: newRotation, isPlaced: isCorrect };
+        }
+        return p;
+      });
+
+      const updates = {};
+      updates[`games/${gameState.gameId}/pieces`] = updatedPieces;
+      
+      if (updatedPieces.find(p => p.id === ui.selectedPiece.id)?.isPlaced) {
+        updates[`games/${gameState.gameId}/players/${user.id}/score`] = 
+          ((players[user.id]?.score || 0) + 1);
+      }
+
+      await update(dbRef(database), updates);
+    } catch (err) {
+      console.error('Failed to rotate piece:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to rotate piece' }
+      }));
+    }
   };
 
   const copyGameLink = async () => {
+    const link = `${window.location.origin}/puzzle/multiplayer/${gameState.gameId}`;
     try {
-      await navigator.clipboard.writeText(generateGameLink());
-      setError({ type: 'success', message: 'Game link copied! Current time: ' + formatTime(timer) });
-      setTimeout(() => setError(null), 3000);
+      await navigator.clipboard.writeText(link);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'success', message: 'Game link copied! Share with friends to play.' }
+      }));
     } catch (err) {
-      setError({ type: 'error', message: 'Failed to copy game link' });
+      console.error('Failed to copy game link:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to copy game link' }
+      }));
     }
   };
 
-  const initializePuzzle = () => {
-    setIsGameStarted(true);
-    setTimer(0);
-    const gridSize = difficulty;
-    const newPieces = [];
-    
-    for (let i = 0; i < gridSize; i++) {
-      for (let j = 0; j < gridSize; j++) {
-        newPieces.push({
-          id: `piece-${i}-${j}`,
-          correct: { x: i, y: j },
-          current: { 
-            x: Math.floor(Math.random() * gridSize), 
-            y: Math.floor(Math.random() * gridSize) 
-          },
-          rotation: Math.floor(Math.random() * 4) * 90,
-          isPlaced: false,
-          zIndex: 1,
-          backgroundPosition: `${-100 * j}% ${-100 * i}%`
-        });
-      }
-    }
-    setPieces(newPieces);
-  };
-
-  const handleDragStart = (e, piece) => {
-    setDraggedPiece(piece);
-    setSelectedPiece(piece);
-    setPieces(prev => prev.map(p => ({
-      ...p,
-      zIndex: p.id === piece.id ? 100 : p.zIndex
-    })));
-  };
-
-  const handleDragEnd = () => {
-    setDraggedPiece(null);
-    setPieces(prev => prev.map(p => ({
-      ...p,
-      zIndex: 1
-    })));
-  };
-
-  const handleDrop = (e, targetX, targetY) => {
-    e.preventDefault();
-    if (!draggedPiece) return;
-
-    setPieces(prev => prev.map(p => {
-      if (p.id === draggedPiece.id) {
-        const isCorrect = targetX === p.correct.x && 
-                         targetY === p.correct.y && 
-                         p.rotation % 360 === 0;
-        
-        if (isCorrect && !p.isPlaced) {
-          setPlayers(prev => prev.map(player => 
-            player.id === user.id 
-              ? { ...player, score: player.score + 1 }
-              : player
-          ));
-        }
-        
-        return {
-          ...p,
-          current: { x: targetX, y: targetY },
-          isPlaced: isCorrect,
-          zIndex: 1
-        };
-      }
-      return p;
-    }));
-  };
-
-  const handleRotate = (direction) => {
-    if (!selectedPiece) return;
-    setPieces(prev => prev.map(p => {
-      if (p.id === selectedPiece.id) {
-        const newRotation = p.rotation + (direction === 'left' ? -90 : 90);
-        const isCorrect = p.correct.x === p.current.x && 
-                         p.correct.y === p.current.y && 
-                         newRotation % 360 === 0;
-        
-        if (isCorrect && !p.isPlaced) {
-          setPlayers(prev => prev.map(player => 
-            player.id === user.id 
-              ? { ...player, score: player.score + 1 }
-              : player
-          ));
-        }
-        
-        return {
-          ...p,
-          rotation: newRotation,
-          isPlaced: isCorrect
-        };
-      }
-      return p;
-    }));
-  };
+  if (ui.loading) {
+    return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  }
 
   return (
-    <div className="flex flex-col gap-4 p-4 bg-gray-50">
+    <div className="flex flex-col gap-4 p-4 bg-white rounded-lg shadow-lg max-w-6xl mx-auto">
+      <div className="flex items-center justify-between border-b pb-4">
+        <h1 className="text-2xl font-bold">Multiplayer Puzzle</h1>
 
-      <PuzzleImageUploader />
-
-      {/* retrieve the image URL from the server */}
-      <div className="max-w-xl mx-auto pt-8">
-        <h2 className="text-2xl font-bold mb-4">Image URL</h2>
-        <p className="text-gray-600">{imageUrl}</p>
-      </div>
-
-      {/* Game Header */}
-      <div className="bg-white rounded-lg shadow p-4">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <h2 className="text-2xl font-bold">Multiplayer Puzzle</h2>
-            <div className="flex items-center gap-2 text-gray-600">
-              <span className="font-mono">⏱️ {formatTime(timer)}</span>
-            </div>
-          </div>
-          <div className="flex gap-2">
+        <div className="flex gap-2">
             <button
-              onClick={copyGameLink}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+              onClick={() => navigate('/')}
+              className="p-2 border rounded hover:bg-gray-100 text-gray-600"
+              title="Return Home"
             >
-              🔗 Share ({formatTime(timer)})
+              <Home className="h-4 w-4" />
             </button>
             <button
-              onClick={() => setZoom(z => Math.max(z - 0.1, 0.5))}
-              className="p-2 rounded-full hover:bg-gray-100"
-              title="Zoom Out"
+              onClick={leaveSession}
+              className="p-2 border rounded hover:bg-red-50 text-red-600"
+              title="Leave Session"
             >
-              ➖
+              <LogOut className="h-4 w-4" />
             </button>
-            <button
-              onClick={() => setZoom(z => Math.min(z + 0.1, 2))}
-              className="p-2 rounded-full hover:bg-gray-100"
-              title="Zoom In"
-            >
-              ➕
-            </button>
-            <button
-              onClick={() => handleRotate('left')}
-              className="p-2 rounded-full hover:bg-gray-100"
-              disabled={!selectedPiece}
-              title="Rotate Left"
-            >
-              ↪️
-            </button>
-            <button
-              onClick={() => handleRotate('right')}
-              className="p-2 rounded-full hover:bg-gray-100"
-              disabled={!selectedPiece}
-              title="Rotate Right"
-            >
-              ↩️
-            </button>
-            <button
-              onClick={initializePuzzle}
-              className="p-2 rounded-full hover:bg-gray-100"
-              title="Reset Puzzle"
-            >
-              🔄
-            </button>
+            {gameState.isHost && (
+              <button
+                onClick={clearSession}
+                className="px-3 py-2 border rounded hover:bg-red-50 text-red-600 text-sm"
+                title="Clear Session"
+              >
+                Clear Session
+              </button>
+            )}
           </div>
         </div>
-      </div>
 
-      {error && (
-        <div className={`p-4 rounded-lg ${
-          error.type === 'error' 
-            ? 'bg-red-50 text-red-600' 
-            : 'bg-green-50 text-green-600'
-        }`}>
-          {error.message}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setUi(prev => ({ ...prev, zoom: Math.max(prev.zoom - 0.1, 0.5) }))}
+            className="p-2 border rounded hover:bg-gray-100"
+            title="Zoom Out"
+          >
+            <ZoomOut className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setUi(prev => ({ ...prev, zoom: Math.min(prev.zoom + 0.1, 2) }))}
+            className="p-2 border rounded hover:bg-gray-100"
+            title="Zoom In"
+          >
+            <ZoomIn className="h-4 w-4" />
+          </button>
+          {ui.selectedPiece && (
+            <>
+              <button
+                onClick={() => handleRotate('left')}
+                className="p-2 border rounded hover:bg-gray-100"
+                title="Rotate Left"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => handleRotate('right')}
+                className="p-2 border rounded hover:bg-gray-100"
+                title="Rotate Right"
+              >
+                <RotateCw className="h-4 w-4" />
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => setUi(prev => ({ ...prev, showPlayers: !prev.showPlayers }))}
+            className="p-2 border rounded hover:bg-gray-100"
+            title="Toggle Players"
+          >
+            <Users className="h-4 w-4" />
+          </button>
+          <button
+            onClick={copyGameLink}
+            className="p-2 border rounded hover:bg-gray-100"
+            title="Share Game"
+          >
+            <Share2 className="h-4 w-4" />
+          </button>
+          {gameState.isHost && !isGameStarted && (
+            <button
+              onClick={initializePuzzle}
+              className="p-2 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!gameState.imageUrl}
+              title="Start Game"
+            >
+              <Play className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      {/* </div> */}
+
+      {ui.error && (
+        <div 
+          className={`p-3 rounded ${
+            ui.error.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+          }`}
+          role="alert"
+        >
+          {ui.error.message}
         </div>
       )}
 
-      {/* Game Content */}
       <div className="flex gap-4">
-        {/* Puzzle Grid */}
-        <div className="flex-1 bg-white rounded-lg shadow p-4">
-          <div 
-            className="grid gap-1"
-            style={{
-              gridTemplateColumns: `repeat(${difficulty}, 1fr)`,
-              transform: `scale(${zoom})`,
-              transformOrigin: 'top left',
-              transition: 'transform 0.2s'
-            }}
-          >
-            {Array.from({ length: difficulty * difficulty }).map((_, index) => {
-              const x = Math.floor(index / difficulty);
-              const y = index % difficulty;
-              return (
-                <div
-                  key={`cell-${x}-${y}`}
-                  className="aspect-square bg-gray-100 rounded-lg relative"
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => handleDrop(e, x, y)}
-                >
-                  {pieces.map(piece => {
-                    if (piece.current.x === x && piece.current.y === y) {
-                      return (
-                        <div
-                          key={piece.id}
-                          draggable
-                          className={`absolute inset-0 rounded-lg cursor-move bg-cover
-                            ${piece.isPlaced ? 'ring-2 ring-green-500' : ''}
-                            ${selectedPiece?.id === piece.id ? 'ring-2 ring-blue-500' : ''}`}
-                          style={{
-                            transform: `rotate(${piece.rotation}deg)`,
-                            zIndex: piece.zIndex,
-                            backgroundImage: `url(${imageUrl || '/api/placeholder/400/400'})`,
-                            backgroundPosition: piece.backgroundPosition,
-                            backgroundSize: `${difficulty * 100}%`
-                          }}
-                          onDragStart={(e) => handleDragStart(e, piece)}
-                          onDragEnd={handleDragEnd}
-                          onClick={() => setSelectedPiece(
-                            selectedPiece?.id === piece.id ? null : piece
-                          )}
-                        />
-                      );
-                    }
-                    return null;
-                  })}
-                </div>
-              );
-            })}
-          </div>
+        <div className="flex-1">
+          {gameState.isHost && !gameState.imageUrl ? (
+            <div className="w-full p-8 border-2 border-dashed rounded-lg text-center">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="w-full"
+              />
+              <p className="mt-2 text-sm text-gray-500">Upload an image to start the game</p>
+            </div>
+          ) : (
+            <>
+              <div 
+                className="grid gap-1 transition-transform duration-200"
+                style={{
+                  gridTemplateColumns: `repeat(${gameState.difficulty}, 1fr)`,
+                  transform: `scale(${ui.zoom})`,
+                  transformOrigin: 'top left'
+                }}
+              >
+                {Array.from({ length: gameState.difficulty * gameState.difficulty }).map((_, index) => {
+                  const x = Math.floor(index / gameState.difficulty);
+                  const y = index % gameState.difficulty;
+                  
+                  return (
+                    <div
+                      key={`cell-${x}-${y}`}
+                      className="aspect-square bg-gray-100 rounded-lg relative"
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => handleDrop(x, y)}
+                    >
+                      {pieces.map(piece => {
+                        if (piece.current.x === x && piece.current.y === y) {
+                          return (
+                            <div
+                              key={piece.id}
+                              draggable
+                              className={`absolute inset-0 rounded-lg cursor-move bg-cover
+                                ${piece.isPlaced ? 'ring-2 ring-green-500' : ''}
+                                ${ui.selectedPiece?.id === piece.id ? 'ring-2 ring-blue-500' : ''}`}
+                              style={{
+                                backgroundImage: `url(${gameState.imageUrl})`,
+                                backgroundSize: `${gameState.difficulty * 100}%`,
+                                backgroundPosition: `${-piece.correct.y * 100}% ${-piece.correct.x * 100}%`,
+                                transform: `rotate(${piece.rotation}deg)`
+                              }}
+                              onDragStart={() => setUi(prev => ({ ...prev, draggedPiece: piece }))}
+                              onClick={() => setUi(prev => ({
+                                ...prev,
+                                selectedPiece: prev.selectedPiece?.id === piece.id ? null : piece
+                              }))}
+                            />
+                          );
+                        }
+                        return null;
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex gap-4 text-sm mt-4">
+                <div>Total Pieces: {pieces.length}</div>
+                <div>Correctly Placed: {pieces.filter(p => p.isPlaced).length}</div>
+                <div>Remaining: {pieces.length - pieces.filter(p => p.isPlaced).length}</div>
+              </div>
+
+              {/* <div className="mt-4 text-center">
+
+                <p>Total Pieces: {pieces.length}</p>
+                <p>Correctly Placed: {pieces.filter(piece => piece.isPlaced).length}</p>
+                <p>Remaining: {pieces.length - pieces.filter(piece => piece.isPlaced).length}</p>
+              </div> */}
+            </>
+          )}
         </div>
 
-        {/* Players List */}
-        <div className="w-72 bg-white rounded-lg shadow">
-          <div className="p-4 border-b">
-            <div className="flex items-center gap-2">
-              👥 <h3 className="font-semibold">Players ({players.length})</h3>
-            </div>
-          </div>
-          <div className="p-4">
+        {ui.showPlayers && (
+          <div className="w-64 bg-gray-50 p-4 rounded-lg">
+            <h3 className="font-semibold mb-4">Players</h3>
             <div className="space-y-2">
-              {players.map(player => (
+              {Object.values(players).map(player => (
                 <div 
                   key={player.id}
-                  className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg"
+                  className="flex items-center gap-2 p-2 bg-white rounded"
                 >
                   <div 
                     className="w-3 h-3 rounded-full"
                     style={{ backgroundColor: player.color }}
                   />
                   <span>{player.name}</span>
-                  <span className="text-sm text-gray-500 ml-auto">
-                    {player.score} pieces
-                  </span>
+                  <span className="ml-auto">{player.score || 0}</span>
                   {player.isHost && (
                     <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
                       Host
@@ -314,7 +582,7 @@ const MultiplayerPuzzle = ({
               ))}
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
