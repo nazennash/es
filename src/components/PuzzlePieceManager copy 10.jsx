@@ -40,8 +40,8 @@ const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onCompl
       const aspectRatio = img.width / img.height;
       
       // Calculate the actual number of pieces needed based on image dimensions
-      const pieceWidth = img.width / difficulty;
-      const pieceHeight = img.height / difficulty;
+      const pieceWidth = Math.ceil(img.width / difficulty);
+      const pieceHeight = Math.ceil(img.height / difficulty);
       
       const newPieces = [];
       for (let i = 0; i < difficulty; i++) {
@@ -141,8 +141,7 @@ const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onCompl
           return { 
             ...p, 
             current: { x: targetX, y: targetY },
-            isPlaced: isCorrectPosition,
-            zIndex: 1
+            isPlaced: isCorrectPosition
           };
         }
         if (p.current.x === targetX && p.current.y === targetY) {
@@ -152,8 +151,7 @@ const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onCompl
           return { 
             ...p, 
             current: draggedPiece.current,
-            isPlaced: isCorrectPosition,
-            zIndex: 1
+            isPlaced: isCorrectPosition
           };
         }
         return p;
@@ -348,9 +346,6 @@ const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onCompl
                                 backgroundSize: `${imageSize.width}px ${imageSize.height}px`,
                                 transform: `rotate(${piece.rotation}deg)`,
                                 transformOrigin: 'center',
-                                width: '100%',
-                                height: '100%',
-                                boxSizing:'border-box',
                                 clipPath: `inset(0 0 0 0)`
                               }}
                             />
