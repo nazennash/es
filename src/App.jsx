@@ -11,6 +11,7 @@ import MultiplayerManager from './components/MultiplayerManager';
 import Leaderboard from './components/Leaderboard';
 import Navbar from './components/Navbar';
 import { useParams } from 'react-router-dom';
+import PuzzleImageUploader from './components/PuzzleImageUploader';
 
 // Cultural puzzles data
 const culturalPuzzles = [
@@ -39,10 +40,12 @@ const MultiplayerPuzzle = () => {
   const { sessionId } = useParams();
   return (
     <div className="puzzle-container">
-      <PuzzleViewer isMultiPlayer={true} />
+
       <MultiplayerManager 
         puzzleId={sessionId}
         isHost={false}
+        isMultiPlayer={true}
+        imageUrl="https://firebasestorage.googleapis.com/v0/b/nash-ac5c0.firebasestorage.app/o/puzzle-images%2F1736843575135-WhatsApp%20Image%202025-01-07%20at%2012.41.45_d81d1a26.jpg?alt=media&token=0e708d01-79d9-40b9-a403-8e4db66f34cb"
       />
     </div>
   );
@@ -151,6 +154,11 @@ const App = () => {
               element={user ? <Navigate to="/" replace /> : <Auth />} 
             />
 
+            <Route 
+              path="/puzzle/multiplayer/:gameId" 
+              element={<MultiplayerPuzzle />} 
+            />
+
             {/* Puzzle Routes */}
             <Route
               path="/puzzle/cultural"
@@ -166,7 +174,8 @@ const App = () => {
             />
             <Route
               path="/puzzle/multiplayer/:sessionId"
-              element={<PrivateRoute element={MultiplayerPuzzle} />}
+              // element={<PrivateRoute element={MultiplayerPuzzle} />}
+              element={<MultiplayerPuzzle user={user} isHost={true} />} 
             />
 
             {/* Leaderboard Route */}

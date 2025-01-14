@@ -54,8 +54,6 @@ const Home = ({ user }) => {
   const handleStartPuzzle = (type) => {
     switch(type) {
       case 'custom':
-        // const puzzleId = `puzzle-${Date.now()}`;
-        // navigate(`/puzzle/${puzzleId}`);
         const newPuzzleId = `puzzle-${Date.now()}`;
         navigate(`/puzzle/${newPuzzleId}`, { replace: true });
         break;
@@ -63,7 +61,12 @@ const Home = ({ user }) => {
         navigate('/puzzle/cultural');
         break;
       case 'multiplayer':
-        navigate('/puzzle/multiplayer/new');
+        navigate('/puzzle/multiplayer/new', { 
+          state: { 
+            isHost: true,
+            userId: user.uid 
+          }
+        });
         break;
       default:
         break;

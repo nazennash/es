@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ZoomIn, ZoomOut, RotateCw, RotateCcw, RefreshCw } from 'lucide-react';
+import { getFirestore, collection, query, where, getDocs, limit, addDoc } from 'firebase/firestore';
 
 const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onComplete, onReturnHome, onNewPuzzle }) => {
   const [pieces, setPieces] = useState([]);
@@ -13,6 +14,8 @@ const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onCompl
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [timeElapsed, setTimeElapsed] = useState(0);
+  const db = getFirestore();
 
   const showMessage = (text, type = 'info', duration = 3000) => {
     setMessage(text);
@@ -99,11 +102,37 @@ const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onCompl
     }
   }, [pieces]);
 
-  const handleSubmit = () => {
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeElapsed(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const handleSubmit = async () => {
     if (completed) {
-      setShowCompletionModal(true);
+      console.log('Puzzle completed!');
+      
+      try {
+        const statsRef = collection(db, 'user_stats');
+        await addDoc(statsRef, {
+          userId: 'user-id-placeholder', // Replace with actual user ID
+          completedAt: new Date(),
+          puzzleName: 'Puzzle Name', // Replace with actual puzzle name
+          completionTime: timeElapsed, 
+        });
+  
+        console.log('Completion data saved successfully!');
+        // Optionally show a modal or notify the user
+        // setShowCompletionModal(true);
+      } catch (error) {
+        console.error('Error saving completion data:', error);
+      }
+    } else {
+      console.log('Puzzle is not yet completed.');
     }
   };
+  
 
   // [Previous handlers remain largely the same, but updated to use piece dimensions]
   const handleDragStart = (e, piece) => {
@@ -146,8 +175,8 @@ const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onCompl
           };
         }
         if (p.current.x === targetX && p.current.y === targetY) {
-          const isCorrectPosition = draggedPiece.current.x === p.correct.x && 
-                                  draggedPiece.current.y === p.correct.y && 
+          const isCorrectPosition = draggedPiece.correct.x === p.correct.x && 
+                                  draggedPiece.correct.y === p.correct.y && 
                                   p.rotation % 360 === 0;
           return { 
             ...p, 
@@ -382,7 +411,19 @@ const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onCompl
               <p className="mb-4 text-gray-600">
                 Congratulations! You've completed the puzzle.
               </p>
-              <div className="space-x-4">
+
+              {/* submit button */}
+              <button
+                onClick={handleSubmit}
+                className="px-6 py-3 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+              >
+                Submit
+              </button>
+              
+            
+              
+
+              {/* <div className="space-x-4">
                 <button
                   onClick={onReturnHome}
                   className="px-6 py-3 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
@@ -395,7 +436,7 @@ const EnhancedPuzzle = ({ imageUrl, initialDifficulty = 3, onPiecePlace, onCompl
                 >
                   Start New Puzzle
                 </button>
-              </div>
+              </div> */}
             </div>
           </div>
         )}
