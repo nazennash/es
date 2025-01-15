@@ -36,7 +36,7 @@ const Navbar = ({ user }) => {
           <Link to="/" className="hover:text-yellow-400 transition-colors">
             Home
           </Link>
-          <Link to="/leaderboard" className="hover:text-yellow-400 transition-colors">
+          <Link to="/user-leaderboard" className="hover:text-yellow-400 transition-colors">
             Leaderboard
           </Link>
         </div>
