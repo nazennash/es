@@ -41,7 +41,7 @@ const CustomUserPuzzle = () => {
 
   const userData = JSON.parse(localStorage.getItem('authUser'));
   const userId = userData.uid;
-  const userName = userData.displayName;
+  const userName = userData.displayName || userData.email;
 
   const user = { 
     id: userId || `user-${Date.now()}`, 
