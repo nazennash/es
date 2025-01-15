@@ -8,6 +8,7 @@ import {
   limit, 
   getDocs 
 } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
 const Leaderboard = ({ puzzleId }) => {
   const [scores, setScores] = useState([]);
@@ -17,25 +18,37 @@ const Leaderboard = ({ puzzleId }) => {
 
   useEffect(() => {
     const fetchScores = async () => {
-
       try {
         setLoading(true);
         setError(null);
         
         const db = getFirestore();
-        
+        const auth = getAuth();
+        const user = auth.currentUser;
+
+        if (!user) {
+          setError('User not logged in');
+          setLoading(false);
+          return;
+        }
 
         const scoresRef = collection(db, 'puzzle_scores');
+        const q = query(
+          scoresRef, 
+          where('puzzleId', '==', puzzleId),
+          where('userId', '==', user.uid),
+          where('difficulty', '==', difficulty),
+          orderBy('completionTime', 'asc'),
+          limit(10)
+        );
 
-        
-        const scoresSnap = await getDocs(scoresRef);
+        const scoresSnap = await getDocs(q);
 
         const formattedScores = scoresSnap.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
 
-        
         setScores(formattedScores);
       } catch (err) {
         console.error('Error fetching scores:', err);

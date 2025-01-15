@@ -18,45 +18,27 @@ const Home = ({ user }) => {
         const db = getFirestore();
         
         // Fetch recent puzzles
-        const puzzlesRef = collection(db, 'completed_puzzles');
-        const puzzlesQuery = query(
-          puzzlesRef,
-          where('userId', '==', user.uid),
-          orderBy('completionTime', 'desc'),
-          limit(3)
-        );
-
-        const puzzleSnap = await getDocs(puzzlesQuery);
+        const puzzlesRef = collection(db, 'user_stats');
+        // const puzzlesQuery = query(
+        //   puzzlesRef,
+        //   where('userId', '==', user.uid),
+        //   orderBy('completionTime', 'desc'),
+        //   limit(3)
+        // );
+        const puzzleSnap = await getDocs(puzzlesRef);
+        console.log('Puzzles:', puzzleSnap.docs.map(doc => doc.data()));
         setRecentPuzzles(puzzleSnap.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         })));
-
-        const userData = JSON.parse(localStorage.getItem('authUser'));
-        const userId = userData.uid;
         
         // Fetch user stats
         const statsRef = collection(db, 'user_stats');
-        
-        const fetchStats = async () => {
-          // const statsQuery = query(statsRef, where('userId', '==', user.uid));
-          
-          console.log('id', user.uid)
-          console.log('id2', userId)
-
-          const statsQuery = query(statsRef, where('userId', '==', user.uid));
-          const statsSnap = await getDocs(statsQuery);
-          if (!statsSnap.empty) {
-            const statsData = statsSnap.docs[0].data();
-            setUserStats({
-              completed: statsData.completed,
-              bestTime: statsData.bestTime,
-              rank: statsData.rank || null
-            });
-          }
-        };
-        
-        fetchStats();
+        const statsQuery = query(statsRef, where('userId', '==', user.uid));
+        const statsSnap = await getDocs(statsQuery);
+        if (!statsSnap.empty) {
+          setUserStats(statsSnap.docs[0].data());
+        }
       } catch (error) {
         console.error('Error fetching user data:', error);
       }
@@ -78,13 +60,9 @@ const Home = ({ user }) => {
   const handleStartPuzzle = (type) => {
     switch(type) {
       case 'custom':
-        navigate(`/puzzle/custom`);
+        const newPuzzleId = `puzzle-${Date.now()}`;
+        navigate(`/puzzle/${newPuzzleId}`, { replace: true });
         break;
-      // case 'custom':
-      //   const newPuzzleId = `puzzle-${Date.now()}`;
-      //   navigate(`/puzzle/${newPuzzleId}`, { replace: true });
-      //   break;
-
       case 'cultural':
         navigate('/puzzle/cultural');
         break;
@@ -197,23 +175,18 @@ const Home = ({ user }) => {
             <h2 className="text-xl font-bold text-gray-900 mb-4">Recent Puzzles</h2>
             {recentPuzzles.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <p>{recentPuzzles.length}</p>
                 {recentPuzzles.map(puzzle => (
-
-                  
                   <div key={puzzle.id} className="border rounded-lg p-4">
-                    
                     <img 
                       src={puzzle.thumbnail} 
-                      // src={puzzle.imageUrl} 
                       alt={puzzle.name} 
-                      // className="w-full h-32 object-contain rounded mb-2"
-                      className="w-full h-32 object-contain rounded mb-2"
+                      className="w-full h-32 object-cover rounded mb-2"
                     />
                     <h3 className="font-semibold">{puzzle.name}</h3>
-                    {/* <p className="text-sm text-gray-600">
-                      Completed at {new Date(puzzle.completedAt.seconds * 1000).toLocaleString()} - {puzzle.timeElapsed} seconds - {puzzle.difficulty} difficulty - {puzzle.totalPieces} pieces
-                    </p> */}
+                    <p className="text-sm text-gray-600">
+                      Completed in {Math.floor(puzzle.completionTime / 60)}:
+                      {String(puzzle.completionTime % 60).padStart(2, '0')}
+                    </p>
                   </div>
                 ))}
               </div>

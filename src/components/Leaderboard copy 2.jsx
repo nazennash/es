@@ -17,24 +17,34 @@ const Leaderboard = ({ puzzleId }) => {
 
   useEffect(() => {
     const fetchScores = async () => {
-
       try {
         setLoading(true);
         setError(null);
         
         const db = getFirestore();
+        // console data in db
         
 
         const scoresRef = collection(db, 'puzzle_scores');
 
+        const scoresQuery = query(
+          scoresRef,
+          where('puzzleId', '==', puzzleId),
+          where('difficulty', '==', difficulty),
+          orderBy('completionTime'),
+          limit(10)
+        );
+        console.log('Query:', scoresQuery);
         
-        const scoresSnap = await getDocs(scoresRef);
-
+        const scoresSnap = await getDocs(scoresQuery);
         const formattedScores = scoresSnap.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
 
+        console.log('Scores:', scoresSnap.docs.map(doc => doc.data()));
+
+        console.log('Fetched Scores:', formattedScores);
         
         setScores(formattedScores);
       } catch (err) {

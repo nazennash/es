@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { auth } from '../firebase';
 import { useNavigate } from 'react-router-dom';
-import { getFirestore, collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
+import { getFirestore, collection, query, where, getDocs, limit, orderBy, Timestamp } from 'firebase/firestore';
 
 const Home = ({ user }) => {
   const navigate = useNavigate();
   const [recentPuzzles, setRecentPuzzles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [userStats, setUserStats] = useState({
     completed: 0,
     bestTime: null,
@@ -13,7 +15,15 @@ const Home = ({ user }) => {
   });
   
   useEffect(() => {
+    // Protect against undefined user
+    if (!user?.uid) {
+      navigate('/auth');
+      return;
+    }
+
     const fetchUserData = async () => {
+      setLoading(true);
+      setError(null);
       try {
         const db = getFirestore();
         
@@ -27,43 +37,44 @@ const Home = ({ user }) => {
         );
 
         const puzzleSnap = await getDocs(puzzlesQuery);
-        setRecentPuzzles(puzzleSnap.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })));
-
-        const userData = JSON.parse(localStorage.getItem('authUser'));
-        const userId = userData.uid;
+        const puzzlesData = puzzleSnap.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            // Safely handle Firestore Timestamp
+            completedAt: data.completedAt instanceof Timestamp 
+              ? data.completedAt.toDate() 
+              : new Date(data.completedAt),
+            // Ensure thumbnail has a fallback
+            thumbnail: data.thumbnail || data.imageUrl || '/placeholder-puzzle.png'
+          };
+        });
+        setRecentPuzzles(puzzlesData);
         
         // Fetch user stats
         const statsRef = collection(db, 'user_stats');
-        
-        const fetchStats = async () => {
-          // const statsQuery = query(statsRef, where('userId', '==', user.uid));
-          
-          console.log('id', user.uid)
-          console.log('id2', userId)
-
-          const statsQuery = query(statsRef, where('userId', '==', user.uid));
-          const statsSnap = await getDocs(statsQuery);
-          if (!statsSnap.empty) {
-            const statsData = statsSnap.docs[0].data();
-            setUserStats({
-              completed: statsData.completed,
-              bestTime: statsData.bestTime,
-              rank: statsData.rank || null
-            });
-          }
-        };
-        
-        fetchStats();
+        const statsQuery = query(statsRef, where('userId', '==', user.uid));
+        const statsSnap = await getDocs(statsQuery);
+        if (!statsSnap.empty) {
+          const statsData = statsSnap.docs[0].data();
+          setUserStats(prevStats => ({
+            ...prevStats,
+            completed: statsData.completed || 4,
+            bestTime: statsData.bestTime || null,
+            rank: statsData.rank || null
+          }));
+        }
       } catch (error) {
         console.error('Error fetching user data:', error);
+        setError('Failed to load user data. Please try again later.');
+      } finally {
+        setLoading(false);
       }
     };
     
     fetchUserData();
-  }, [user.uid]);
+  }, [user?.uid, navigate]);
 
   const handleLogout = async () => {
     try {
@@ -72,46 +83,70 @@ const Home = ({ user }) => {
       navigate('/auth');
     } catch (error) {
       console.error('Logout error:', error);
+      setError('Failed to logout. Please try again.');
     }
   };
 
   const handleStartPuzzle = (type) => {
-    switch(type) {
-      case 'custom':
-        navigate(`/puzzle/custom`);
-        break;
-      // case 'custom':
-      //   const newPuzzleId = `puzzle-${Date.now()}`;
-      //   navigate(`/puzzle/${newPuzzleId}`, { replace: true });
-      //   break;
+    if (!user?.uid) {
+      setError('Please login to start a puzzle');
+      return;
+    }
 
-      case 'cultural':
-        navigate('/puzzle/cultural');
-        break;
-      case 'multiplayer':
-        const sessionId = `session-${Date.now()}`;
-        navigate(`/puzzle/multiplayer/${sessionId}`, { replace: true }, { state: { isHost: true, userId: user.uid } });
-        // navigate('/puzzle/multiplayer/new', { 
-          // state: { 
-          //   isHost: true,
-          //   userId: user.uid 
-          // }
-        // });
-        break;
-      default:
-        break;
+    try {
+      switch(type) {
+        case 'custom':
+          navigate(`/puzzle/custom-${Date.now()}`, { 
+            replace: true,
+            state: { userId: user.uid }
+          });
+          break;
+        case 'cultural':
+          navigate('/puzzle/cultural', {
+            state: { userId: user.uid }
+          });
+          break;
+        case 'multiplayer':
+          navigate(`/puzzle/multiplayer/session-${Date.now()}`, { 
+            replace: true,
+            state: { 
+              isHost: true,
+              userId: user.uid 
+            }
+          });
+          break;
+        default:
+          console.warn('Unknown puzzle type:', type);
+      }
+    } catch (error) {
+      console.error('Navigation error:', error);
+      setError('Failed to start puzzle. Please try again.');
     }
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-xl text-gray-600">Loading...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-100">
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+          <span className="block sm:inline">{error}</span>
+        </div>
+      )}
+
       {/* Header Section */}
       <div className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">
-                Welcome, {user?.displayName || user?.email}!
+                Welcome, {user?.displayName || user?.email || 'Guest'}!
               </h1>
               <p className="mt-1 text-sm text-gray-500">
                 Ready to solve some puzzles?
@@ -197,23 +232,20 @@ const Home = ({ user }) => {
             <h2 className="text-xl font-bold text-gray-900 mb-4">Recent Puzzles</h2>
             {recentPuzzles.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <p>{recentPuzzles.length}</p>
                 {recentPuzzles.map(puzzle => (
-
-                  
                   <div key={puzzle.id} className="border rounded-lg p-4">
-                    
                     <img 
-                      src={puzzle.thumbnail} 
-                      // src={puzzle.imageUrl} 
-                      alt={puzzle.name} 
-                      // className="w-full h-32 object-contain rounded mb-2"
+                      src={puzzle.thumbnail}
+                      alt={puzzle.name || 'Puzzle thumbnail'} 
                       className="w-full h-32 object-contain rounded mb-2"
                     />
-                    <h3 className="font-semibold">{puzzle.name}</h3>
-                    {/* <p className="text-sm text-gray-600">
-                      Completed at {new Date(puzzle.completedAt.seconds * 1000).toLocaleString()} - {puzzle.timeElapsed} seconds - {puzzle.difficulty} difficulty - {puzzle.totalPieces} pieces
-                    </p> */}
+                    <h3 className="font-semibold">{puzzle.name || 'Unnamed Puzzle'}</h3>
+                    <p className="text-sm text-gray-600">
+                      Completed: {puzzle.completedAt.toLocaleString()}
+                      {puzzle.timeElapsed && ` - ${puzzle.timeElapsed}s`}
+                      {puzzle.difficulty && ` - ${puzzle.difficulty}`}
+                      {puzzle.totalPieces && ` - ${puzzle.totalPieces} pieces`}
+                    </p>
                   </div>
                 ))}
               </div>

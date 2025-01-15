@@ -12,6 +12,7 @@ import Leaderboard from './components/Leaderboard';
 import Navbar from './components/Navbar';
 import { useParams } from 'react-router-dom';
 import PuzzleImageUploader from './components/PuzzleImageUploader';
+import CustomUserPuzzle from './components/CustomUserPuzzle';
 
 // Cultural puzzles data
 const culturalPuzzles = [
@@ -168,20 +169,34 @@ const App = () => {
               path="/puzzle/cultural/:id"
               element={<PrivateRoute element={CulturalPuzzle} />}
             />
+            
+
             <Route
               path="/puzzle/:puzzleId"
               element={<PrivateRoute element={PuzzlePage} />}
             />
+
+            <Route 
+              path="/puzzle/custom"
+              element={<PrivateRoute element={CustomUserPuzzle} />}
+            />
+
             <Route
               path="/puzzle/multiplayer/:sessionId"
               // element={<PrivateRoute element={MultiplayerPuzzle} />}
               element={<MultiplayerPuzzle user={user} isHost={true} />} 
             />
 
-            {/* Leaderboard Route */}
+            {/* Global Leaderboard Route */}
             <Route
               path="/leaderboard"
               element={<PrivateRoute element={GlobalLeaderboard} />}
+            />
+
+            {/* User Leaderboard Route */}
+            <Route
+              path="/user-leaderboard"
+              element={<PrivateRoute element={() => <Leaderboard puzzleId={user.uid} />} />}
             />
           </Routes>
         </main>

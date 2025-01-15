@@ -17,6 +17,7 @@ const Leaderboard = ({ puzzleId }) => {
 
   useEffect(() => {
     const fetchScores = async () => {
+      console.log('Starting fetchScores with:', { puzzleId, difficulty });
 
       try {
         setLoading(true);
@@ -27,14 +28,25 @@ const Leaderboard = ({ puzzleId }) => {
 
         const scoresRef = collection(db, 'puzzle_scores');
 
+        // const scoresQuery = query(
+        //   scoresRef,
+        //   where('puzzleId', '==', puzzleId),
+        //   where('difficulty', '==', difficulty),
+        //   orderBy('completionTime'),
+        //   limit(10)
+        // );
+        // console.log('Query:', scoresQuery);
         
         const scoresSnap = await getDocs(scoresRef);
-
+        // const scoresSnap = await getDocs(scoresQuery);
         const formattedScores = scoresSnap.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
 
+        console.log('Scores:', scoresSnap.docs.map(doc => doc.data()));
+
+        console.log('Fetched Scores:', formattedScores);
         
         setScores(formattedScores);
       } catch (err) {

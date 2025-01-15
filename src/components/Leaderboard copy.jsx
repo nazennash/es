@@ -13,28 +13,27 @@ const Leaderboard = ({ puzzleId }) => {
   const [scores, setScores] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [difficulty, setDifficulty] = useState('easy');
 
   useEffect(() => {
     const fetchScores = async () => {
-
       try {
         setLoading(true);
         setError(null);
         
         const db = getFirestore();
-        
-
         const scoresRef = collection(db, 'puzzle_scores');
-
+        const scoresQuery = query(
+          scoresRef,
+          where('puzzleId', '==', puzzleId),
+          orderBy('completionTime'),
+          limit(10)
+        );
         
-        const scoresSnap = await getDocs(scoresRef);
-
+        const scoresSnap = await getDocs(scoresQuery);
         const formattedScores = scoresSnap.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
-
         
         setScores(formattedScores);
       } catch (err) {
@@ -48,7 +47,7 @@ const Leaderboard = ({ puzzleId }) => {
     if (puzzleId) {
       fetchScores();
     }
-  }, [puzzleId, difficulty]);
+  }, [puzzleId]);
 
   const formatTime = (seconds) => {
     const minutes = Math.floor(seconds / 60);
@@ -86,19 +85,6 @@ const Leaderboard = ({ puzzleId }) => {
   return (
     <div className="leaderboard p-4">
       <h3 className="text-xl font-bold mb-4">Top Times</h3>
-      <div className="mb-4">
-        <label htmlFor="difficulty" className="font-medium mr-2">Difficulty:</label>
-        <select 
-          id="difficulty" 
-          value={difficulty} 
-          onChange={(e) => setDifficulty(e.target.value)}
-          className="p-2 border rounded"
-        >
-          <option value="easy">Easy</option>
-          <option value="medium">Medium</option>
-          <option value="hard">Hard</option>
-        </select>
-      </div>
       <div className="space-y-2">
         {scores.map((score, index) => (
           <div 
