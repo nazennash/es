@@ -37,6 +37,7 @@ const Navbar = ({ user }) => {
             Home
           </Link>
           <Link to="/user-leaderboard" className="hover:text-yellow-400 transition-colors">
+          {/* <Link to="/leaderboard" className="hover:text-yellow-400 transition-colors"> */}
             Leaderboard
           </Link>
         </div>
@@ -92,8 +93,9 @@ const Navbar = ({ user }) => {
           >
             Home
           </Link>
+          {/* <Link to="/user-leaderboard" className="hover:text-yellow-400 transition-colors"></Link> */}
           <Link
-            to="/leaderboard"
+            to="/user-leaderboard"
             className="block hover:text-yellow-400 transition-colors"
             onClick={() => setIsMobileMenuOpen(false)} // Close menu on link click
           >
