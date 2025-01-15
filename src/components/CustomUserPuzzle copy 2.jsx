@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getDatabase, ref as dbRef, set, update, get, onValue, off } from 'firebase/database';
-import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Play, Home, LogOut } from 'lucide-react';
+import { getDatabase, ref as dbRef, set, update, get } from 'firebase/database';
+import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Play } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { handlePuzzleCompletion } from './PuzzleCompletionHandler';
+import { LogOut, Home } from 'lucide-react';
+import { handlePuzzleCompletion, isPuzzleComplete } from './PuzzleCompletionHandler';
 
 const CustomUserPuzzle = () => {
   const [gameState, setGameState] = useState({
@@ -12,11 +13,8 @@ const CustomUserPuzzle = () => {
     difficulty: 3,
     timer: 0,
     imageSize: { width: 0, height: 0 },
-    startTime: null,
-    isCompleted: false
+    startTime: null
   });
-
-
 
   const [pieces, setPieces] = useState([]);
   const [isGameStarted, setIsGameStarted] = useState(false);
@@ -34,19 +32,8 @@ const CustomUserPuzzle = () => {
   const storage = getStorage();
   const database = getDatabase();
   const navigate = useNavigate();
-  const gameRef = useRef(dbRef(database, `games/${gameState.gameId}`));
   const timerRef = useRef(null);
-
-  const userData = JSON.parse(localStorage.getItem('authUser'));
-  const userId = userData.uid;
-  const userName = userData.displayName;
-
-  const user = { 
-    id: userId || `user-${Date.now()}`, 
-    name: userName || `Player ${Math.floor(Math.random() * 1000)}` 
-  };
-
-  // console.log(user);
+  const gameRef = useRef(dbRef(database, `games/${gameState.gameId}`));
 
   // Initialize game and set up Firebase listeners
   useEffect(() => {
@@ -54,6 +41,7 @@ const CustomUserPuzzle = () => {
       try {
         setUi(prev => ({ ...prev, loading: true }));
         
+        // Check if game exists
         const snapshot = await get(gameRef.current);
         if (!snapshot.exists()) {
           await set(gameRef.current, {
@@ -61,18 +49,21 @@ const CustomUserPuzzle = () => {
             isGameStarted: false,
             timer: 0,
             difficulty: gameState.difficulty,
-            startTime: null,
-            isCompleted: false
+            startTime: null
           });
         } else {
+          // Sync with existing game data
           const data = snapshot.val();
-          setGameState(prev => ({ ...prev, ...data }));
+          setGameState(prev => ({
+            ...prev,
+            ...data
+          }));
           if (data.pieces) setPieces(data.pieces);
           if (data.isGameStarted) setIsGameStarted(true);
         }
-
-        // Set up real-time listener
-        const unsubscribe = onValue(gameRef.current, (snapshot) => {
+        
+        // Set up real-time listeners
+        const unsubscribe = gameRef.current.on('value', (snapshot) => {
           const data = snapshot.val();
           if (data) {
             setGameState(prev => ({ ...prev, ...data }));
@@ -83,16 +74,11 @@ const CustomUserPuzzle = () => {
           }
         });
 
-        // Calculate final time correctly
-        if (gameState.startTime) {
-          const finalTime = Math.floor((Date.now() - gameState.startTime) / 1000);
-          console.log(finalTime);
-        }
-
         setUi(prev => ({ ...prev, loading: false }));
         
+        // Cleanup
         return () => {
-          off(gameRef.current);
+          unsubscribe();
           if (timerRef.current) clearInterval(timerRef.current);
         };
       } catch (err) {
@@ -110,106 +96,68 @@ const CustomUserPuzzle = () => {
 
   // Timer management
   useEffect(() => {
-    let timerInterval;
-
-    const updateTimer = async () => {
-      if (!gameState.startTime || !isGameStarted || gameState.isCompleted) return;
+    if (isGameStarted && !gameState.startTime) {
+      const startTime = Date.now();
       
-      const newTimer = Math.floor((Date.now() - gameState.startTime) / 1000);
+      // Update both local state and Firebase
+      setGameState(prev => ({ ...prev, startTime }));
+      update(gameRef.current, { startTime });
       
-      try {
-        await update(gameRef.current, { timer: newTimer });
-        setGameState(prev => ({ ...prev, timer: newTimer }));
-      } catch (err) {
-        console.error('Failed to update timer:', err);
-      }
-    };
-
-    if (isGameStarted && gameState.startTime && !gameState.isCompleted) {
-      timerInterval = setInterval(updateTimer, 1000);
+      timerRef.current = setInterval(() => {
+        const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+        setGameState(prev => {
+          const newState = { ...prev, timer: elapsedSeconds };
+          update(gameRef.current, { timer: elapsedSeconds });
+          return newState;
+        });
+      }, 1000);
     }
 
     return () => {
-      if (timerInterval) {
-        clearInterval(timerInterval);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
       }
     };
-  }, [isGameStarted, gameState.startTime, gameState.isCompleted]);
-
-  const handlePuzzleComplete = useCallback(async () => {
-    if (!isGameStarted || gameState.isCompleted) return;
-
-    try {
-      const finalTime = Math.floor((Date.now() - gameState.startTime) / 1000);
-
-      console.log("Final Time", finalTime)
-
-      const updates = {
-        isCompleted: true,
-        isGameStarted: false,
-        completionTime: finalTime,
-        finalTimer: finalTime
-      };
-
-      console.log(updates);
-
-      await update(gameRef.current, updates);
-      
-      setGameState(prev => ({
-        ...prev,
-        ...updates,
-        timer: finalTime
-      }));
-      
-      setIsGameStarted(false);
-
-      await handlePuzzleCompletion({
-        puzzleId: gameState.gameId,
-        startTime: gameState.startTime,
-        timer: finalTime,
-        difficulty: gameState.difficulty,
-        imageUrl: gameState.imageUrl,
-        userId: userId, 
-        playerName: userName,
-      });
-
-      setUi(prev => ({
-        ...prev,
-        error: { 
-          type: 'success', 
-          message: `Puzzle completed! Time: ${Math.floor(finalTime / 60)}:${String(finalTime % 60).padStart(2, '0')}` 
-        }
-      }));
-
-    } catch (err) {
-      console.error('Failed to handle puzzle completion:', err);
-      setUi(prev => ({
-        ...prev,
-        error: { type: 'error', message: 'Failed to record puzzle completion' }
-      }));
-    }
-  }, [isGameStarted, gameState.isCompleted, gameState.startTime, gameState.gameId, gameState.difficulty, gameState.imageUrl, userId, userName]);
-  
+  }, [isGameStarted, gameState.startTime]);
 
   // Puzzle completion check
   useEffect(() => {
-    const checkCompletion = () => {
-      if (!isGameStarted || gameState.isCompleted || pieces.length === 0) return;
+    const checkCompletion = async () => {
+      if (isGameStarted && pieces.length > 0 && isPuzzleComplete(pieces)) {
+        try {
+          const completionTime = Date.now() - gameState.startTime;
+          await handlePuzzleCompletion({
+            puzzleId: gameState.gameId,
+            startTime: gameState.startTime,
+            difficulty: gameState.difficulty,
+            imageUrl: gameState.imageUrl,
+            timer: completionTime / 1000
+          });
 
-      const isComplete = pieces.every(piece => 
-        piece.isPlaced && 
-        piece.current.x === piece.correct.x && 
-        piece.current.y === piece.correct.y && 
-        piece.rotation % 360 === 0
-      );
+          await update(gameRef.current, {
+            isGameStarted: false,
+            completionTime
+          });
 
-      if (isComplete) {
-        handlePuzzleComplete();
+          setIsGameStarted(false);
+          if (timerRef.current) clearInterval(timerRef.current);
+
+          setUi(prev => ({
+            ...prev,
+            error: { type: 'success', message: 'Puzzle completed! Score recorded.' }
+          }));
+        } catch (err) {
+          console.error('Failed to record completion:', err);
+          setUi(prev => ({
+            ...prev,
+            error: { type: 'error', message: 'Failed to record puzzle completion' }
+          }));
+        }
       }
     };
-
+    
     checkCompletion();
-  }, [pieces, isGameStarted, gameState.isCompleted, handlePuzzleComplete]);
+  }, [pieces, isGameStarted]);
 
   const handleImageUpload = async (event) => {
     const file = event.target.files?.[0];
@@ -218,6 +166,7 @@ const CustomUserPuzzle = () => {
     try {
       setUi(prev => ({ ...prev, loading: true, error: null, imageUploading: true }));
       
+      // Validate file size and type
       if (file.size > 5 * 1024 * 1024) {
         throw new Error('Image must be smaller than 5MB');
       }
@@ -230,6 +179,7 @@ const CustomUserPuzzle = () => {
       const snapshot = await uploadBytes(imageRef, file);
       const url = await getDownloadURL(snapshot.ref);
       
+      // Load image and get dimensions
       return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = async () => {
@@ -269,68 +219,54 @@ const CustomUserPuzzle = () => {
     }
   };
 
-  const generatePuzzlePieces = () => {
-    const positions = Array.from(
-      { length: gameState.difficulty * gameState.difficulty },
-      (_, i) => i
-    );
-    
-    for (let i = positions.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [positions[i], positions[j]] = [positions[j], positions[i]];
-    }
-    
-    const newPieces = [];
-    let posIndex = 0;
-    
-    for (let i = 0; i < gameState.difficulty; i++) {
-      for (let j = 0; j < gameState.difficulty; j++) {
-        const pos = positions[posIndex++];
-        const currentX = Math.floor(pos / gameState.difficulty);
-        const currentY = pos % gameState.difficulty;
-        
-        newPieces.push({
-          id: `piece-${i}-${j}`,
-          correct: { x: i, y: j },
-          current: { x: currentX, y: currentY },
-          rotation: Math.floor(Math.random() * 4) * 90,
-          isPlaced: false
-        });
-      }
-    }
-    
-    return newPieces;
-  };
-
   const initializePuzzle = async () => {
     if (!gameState.imageUrl) return;
 
     try {
       setUi(prev => ({ ...prev, loading: true, error: null }));
       
-      const startTime = Date.now();
-      const newPieces = generatePuzzlePieces();
+      // Create shuffled array of positions
+      const positions = Array.from(
+        { length: gameState.difficulty * gameState.difficulty },
+        (_, i) => i
+      );
       
+      // Fisher-Yates shuffle
+      for (let i = positions.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [positions[i], positions[j]] = [positions[j], positions[i]];
+      }
+      
+      const newPieces = [];
+      let posIndex = 0;
+      
+      for (let i = 0; i < gameState.difficulty; i++) {
+        for (let j = 0; j < gameState.difficulty; j++) {
+          const pos = positions[posIndex++];
+          const currentX = Math.floor(pos / gameState.difficulty);
+          const currentY = pos % gameState.difficulty;
+          
+          newPieces.push({
+            id: `piece-${i}-${j}`,
+            correct: { x: i, y: j },
+            current: { x: currentX, y: currentY },
+            rotation: Math.floor(Math.random() * 4) * 90,
+            isPlaced: false
+          });
+        }
+      }
+
       const updates = {
         pieces: newPieces,
         isGameStarted: true,
-        startTime,
-        timer: 0,
-        isCompleted: false
+        startTime: Date.now(),
+        timer: 0
       };
       
       await update(gameRef.current, updates);
-      
       setPieces(newPieces);
-      setGameState(prev => ({
-        ...prev,
-        startTime,
-        timer: 0,
-        isCompleted: false
-      }));
       setIsGameStarted(true);
       setUi(prev => ({ ...prev, loading: false }));
-      
     } catch (err) {
       console.error('Failed to initialize puzzle:', err);
       setUi(prev => ({
@@ -345,6 +281,7 @@ const CustomUserPuzzle = () => {
     if (!ui.draggedPiece) return;
     
     try {
+      // Find piece at target position (if any)
       const targetPiece = pieces.find(p => p.current.x === x && p.current.y === y);
       
       const updatedPieces = pieces.map(p => {
@@ -355,6 +292,7 @@ const CustomUserPuzzle = () => {
           return { ...p, current: { x, y }, isPlaced: isCorrect };
         }
         
+        // If there was a piece at the target location, swap positions
         if (targetPiece && p.id === targetPiece.id) {
           return { 
             ...p, 
@@ -439,7 +377,6 @@ const CustomUserPuzzle = () => {
     <div className="flex flex-col gap-4 p-4 bg-white rounded-lg shadow-lg max-w-6xl mx-auto">
       <div className="flex items-center justify-between border-b pb-4">
         <h1 className="text-2xl font-bold">Custom User Puzzle</h1>
-        <p>Welcome {user.name}</p>
         <div className="text-lg font-semibold">
           {`Time: ${String(Math.floor(gameState.timer / 60)).padStart(2, '0')}:${String(gameState.timer % 60).padStart(2, '0')}`}
         </div>
