@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { auth } from '../firebase';
 
 const Navbar = ({ user }) => {
   // State to manage the mobile menu visibility
@@ -8,6 +9,16 @@ const Navbar = ({ user }) => {
   // Toggle function for mobile menu
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      localStorage.removeItem('authUser');
+      navigate('/auth');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   return (
@@ -88,6 +99,7 @@ const Navbar = ({ user }) => {
           >
             Leaderboard
           </Link>
+          
           {user ? (
             <span className="block text-sm bg-gray-700 py-2 px-4 rounded-full">
               {user.email}
@@ -100,7 +112,15 @@ const Navbar = ({ user }) => {
             >
               Login
             </Link>
-          )}
+            
+          )
+          }
+          <button
+              onClick={handleLogout}
+              className="bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 transition duration-200 w-full md:w-auto"
+            >
+              Logout
+            </button>
         </div>
       )}
     </nav>

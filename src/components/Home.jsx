@@ -114,31 +114,29 @@ const Home = ({ user }) => {
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header Section */}
-      <div className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                Welcome, {user?.displayName || user?.email}!
-              </h1>
-              <p className="mt-1 text-sm text-gray-500">
-                Ready to solve some puzzles?
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={handleLogout}
-                className="bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 transition duration-200"
-              >
-                Logout
-              </button>
-              <button
-                onClick={() => navigate('/user-leaderboard')}
-                className="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 transition duration-200"
-              >
-                Leaderboard
-              </button>
-            </div>
+      <div className="bg-white shadow-sm md:flex md:items-center md:justify-between md:py-6 md:px-4">
+        <div className="flex flex-col md:flex-row md:items-center md:gap-4 pb-5 md:pb-0 ">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">
+              Welcome, {user?.displayName || user?.email}!
+            </h1>
+            <p className="mt-1 text-sm text-gray-500">
+              Ready to solve some puzzles?
+            </p>
+          </div>
+          <div className="hidden md:flex md:gap-2 mt-4 md:mt-0">
+            <button
+              onClick={handleLogout}
+              className="bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 transition duration-200 w-full md:w-auto"
+            >
+              Logout
+            </button>
+            <button
+              onClick={() => navigate('/user-leaderboard')}
+              className="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 transition duration-200 w-full md:w-auto"
+            >
+              Leaderboard
+            </button>
           </div>
         </div>
       </div>
