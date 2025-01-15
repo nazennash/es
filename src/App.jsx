@@ -13,6 +13,7 @@ import Navbar from './components/Navbar';
 import { useParams } from 'react-router-dom';
 import PuzzleImageUploader from './components/PuzzleImageUploader';
 import CustomUserPuzzle from './components/CustomUserPuzzle';
+import CustomCulturalPuzzle from './components/CustomCulturalPuzzle';
 
 // Cultural puzzles data
 const culturalPuzzles = [
@@ -163,7 +164,8 @@ const App = () => {
             {/* Puzzle Routes */}
             <Route
               path="/puzzle/cultural"
-              element={<PrivateRoute element={CulturalPuzzlesGallery} />}
+              element={<PrivateRoute element={CustomCulturalPuzzle} />}
+              // element={<PrivateRoute element={CustomCulturalPuzzle} />}
             />
             <Route
               path="/puzzle/cultural/:id"

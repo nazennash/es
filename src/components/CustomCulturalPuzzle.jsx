@@ -4,8 +4,17 @@ import { getDatabase, ref as dbRef, set, update, get, onValue, off } from 'fireb
 import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Play, Home, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { handlePuzzleCompletion } from './PuzzleCompletionHandler';
+import elephant from '../assets/elephant.png';
+import pyramid from '../assets/pyramid.png';
+import african from '../assets/african.png';
 
-const CustomUserPuzzle = () => {
+const images = {
+  african: african,
+  pyramids: pyramid,
+  elephant: elephant
+};
+
+const CustomCulturalPuzzle = () => {
   const [gameState, setGameState] = useState({
     gameId: `game-${Date.now()}`,
     imageUrl: '',
@@ -16,8 +25,7 @@ const CustomUserPuzzle = () => {
     isCompleted: false
   });
 
-
-
+  const [selectedImage, setSelectedImage] = useState('elephant');
   const [pieces, setPieces] = useState([]);
   const [isGameStarted, setIsGameStarted] = useState(false);
   const [ui, setUi] = useState({
@@ -57,7 +65,7 @@ const CustomUserPuzzle = () => {
         const snapshot = await get(gameRef.current);
         if (!snapshot.exists()) {
           await set(gameRef.current, {
-            imageUrl: '',
+            imageUrl: images[selectedImage],
             isGameStarted: false,
             timer: 0,
             difficulty: gameState.difficulty,
@@ -106,7 +114,7 @@ const CustomUserPuzzle = () => {
     };
 
     initializeGame();
-  }, [gameState.gameId]);
+  }, [gameState.gameId, selectedImage]);
 
   // Timer management
   useEffect(() => {
@@ -211,64 +219,6 @@ const CustomUserPuzzle = () => {
     checkCompletion();
   }, [pieces, isGameStarted, gameState.isCompleted, handlePuzzleComplete]);
 
-  const handleImageUpload = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setUi(prev => ({ ...prev, loading: true, error: null, imageUploading: true }));
-      
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('Image must be smaller than 5MB');
-      }
-      
-      if (!file.type.startsWith('image/')) {
-        throw new Error('File must be an image');
-      }
-
-      const imageRef = storageRef(storage, `puzzle-images/${gameState.gameId}/${file.name}`);
-      const snapshot = await uploadBytes(imageRef, file);
-      const url = await getDownloadURL(snapshot.ref);
-      
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = async () => {
-          try {
-            await update(gameRef.current, {
-              imageUrl: url,
-              imageSize: {
-                width: img.width,
-                height: img.height
-              }
-            });
-            
-            setGameState(prev => ({
-              ...prev,
-              imageUrl: url,
-              imageSize: { width: img.width, height: img.height }
-            }));
-            
-            setUi(prev => ({ ...prev, loading: false, imageUploading: false }));
-            resolve();
-          } catch (err) {
-            reject(new Error('Failed to update game with image information'));
-          }
-        };
-        
-        img.onerror = () => reject(new Error('Failed to load image'));
-        img.src = url;
-      });
-    } catch (err) {
-      console.error('Image upload error:', err);
-      setUi(prev => ({
-        ...prev,
-        error: { type: 'error', message: err.message || 'Failed to upload image' },
-        loading: false,
-        imageUploading: false
-      }));
-    }
-  };
-
   const generatePuzzlePieces = () => {
     const positions = Array.from(
       { length: gameState.difficulty * gameState.difficulty },
@@ -303,7 +253,7 @@ const CustomUserPuzzle = () => {
   };
 
   const initializePuzzle = async () => {
-    if (!gameState.imageUrl) return;
+    if (!images[selectedImage]) return;
 
     try {
       setUi(prev => ({ ...prev, loading: true, error: null }));
@@ -316,7 +266,8 @@ const CustomUserPuzzle = () => {
         isGameStarted: true,
         startTime,
         timer: 0,
-        isCompleted: false
+        isCompleted: false,
+        imageUrl: images[selectedImage]
       };
       
       await update(gameRef.current, updates);
@@ -481,6 +432,21 @@ const CustomUserPuzzle = () => {
         </div>
       )}
 
+      {!isGameStarted && (
+        <div className="flex gap-4 mt-4">
+          {Object.keys(images).map((key) => (
+            <div
+              key={key}
+              className={`p-4 border rounded-lg cursor-pointer ${selectedImage === key ? 'border-blue-500' : 'border-gray-300'}`}
+              onClick={() => setSelectedImage(key)}
+            >
+              <img src={images[key]} alt={key} className="w-16 h-16 object-cover rounded" />
+              <p className="text-center mt-2 capitalize">{key}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex gap-2 mt-4">
         <button
           onClick={() => setUi(prev => ({ ...prev, zoom: Math.max(prev.zoom - 0.1, 0.5) }))}
@@ -541,14 +507,8 @@ const CustomUserPuzzle = () => {
         <div className="flex-1">
           {!gameState.imageUrl ? (
             <div className="w-full p-8 border-2 border-dashed rounded-lg text-center">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="w-full"
-              />
               <p className="mt-2 text-sm text-gray-500">
-                {ui.imageUploading ? 'Uploading image...' : 'Upload an image to start the game'}
+                Loading image...
               </p>
             </div>
           ) : (
@@ -602,7 +562,7 @@ const CustomUserPuzzle = () => {
                                 ${piece.isPlaced ? 'ring-2 ring-green-500' : ''}
                                 ${ui.selectedPiece?.id === piece.id ? 'ring-2 ring-blue-500' : ''}`}
                               style={{
-                                backgroundImage: `url(${gameState.imageUrl})`,
+                                backgroundImage: `url(${images[selectedImage]})`,
                                 backgroundSize,
                                 backgroundPosition,
                                 transform: `rotate(${piece.rotation}deg)`
@@ -635,4 +595,4 @@ const CustomUserPuzzle = () => {
   );
 };
 
-export default CustomUserPuzzle;
+export default CustomCulturalPuzzle;

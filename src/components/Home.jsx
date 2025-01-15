@@ -41,8 +41,8 @@ const Home = ({ user }) => {
         const fetchStats = async () => {
           // const statsQuery = query(statsRef, where('userId', '==', user.uid));
           
-          console.log('id', user.uid)
-          console.log('id2', userId)
+          // console.log('id', user.uid)
+          // console.log('id2', userId)
 
           const statsQuery = query(statsRef, where('userId', '==', user.uid));
           const statsSnap = await getDocs(statsQuery);
