@@ -5,6 +5,8 @@ import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Share2, Play, Users } from 'lucid
 import { useNavigate } from 'react-router-dom';
 import { LogOut, Home } from 'lucide-react';
 import { handlePuzzleCompletion, isPuzzleComplete } from './PuzzleCompletionHandler';
+import { Bar } from 'react-chartjs-2';
+import 'chart.js/auto';
 
 const MultiplayerPuzzle = () => {
   const [gameState, setGameState] = useState({
@@ -523,6 +525,26 @@ const MultiplayerPuzzle = () => {
     }
   };
 
+  const calculateCompletionPercentage = () => {
+    const totalPieces = pieces.length;
+    const correctlyPlaced = pieces.filter(p => p.isPlaced).length;
+    return totalPieces > 0 ? (correctlyPlaced / totalPieces) * 100 : 0;
+  };
+
+  const completionPercentage = calculateCompletionPercentage();
+  const data = {
+    labels: ['Completion'],
+    datasets: [
+      {
+        label: 'Completion Percentage',
+        data: [completionPercentage],
+        backgroundColor: ['rgba(75, 192, 192, 0.6)'],
+        borderColor: ['rgba(75, 192, 192, 1)'],
+        borderWidth: 1,
+      },
+    ],
+  };
+
   if (ui.loading) {
     return <div className="flex items-center justify-center h-screen">Loading...</div>;
   }
@@ -746,6 +768,10 @@ const MultiplayerPuzzle = () => {
                 <div>Total Pieces: {pieces.length}</div>
                 <div>Correctly Placed: {pieces.filter(p => p.isPlaced).length}</div>
                 <div>Remaining: {pieces.length - pieces.filter(p => p.isPlaced).length}</div>
+                <div>Completion: {calculateCompletionPercentage().toFixed(2)}%</div>
+              </div>
+              <div className="mt-4">
+                <Bar data={data} options={{ scales: { y: { beginAtZero: true, max: 100 } } }} />
               </div>
             </>
           )}

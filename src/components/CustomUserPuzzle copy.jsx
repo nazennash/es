@@ -4,19 +4,12 @@ import { getDatabase, ref as dbRef, set, update, get, onValue, off } from 'fireb
 import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Play, Home, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { handlePuzzleCompletion } from './PuzzleCompletionHandler';
-import elephant from '../assets/elephant.png';
-import pyramid from '../assets/pyramid.png';
-import african from '../assets/african.png';
 import { Bar } from 'react-chartjs-2';
-import 'chart.js/auto';
+import { Chart as ChartJS, BarElement, CategoryScale, LinearScale, Tooltip, Legend } from 'chart.js';
 
-const images = {
-  african: african,
-  pyramids: pyramid,
-  elephant: elephant
-};
+ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
-const CustomCulturalPuzzle = () => {
+const CustomUserPuzzle = () => {
   const [gameState, setGameState] = useState({
     gameId: `game-${Date.now()}`,
     imageUrl: '',
@@ -27,7 +20,8 @@ const CustomCulturalPuzzle = () => {
     isCompleted: false
   });
 
-  const [selectedImage, setSelectedImage] = useState('elephant');
+
+
   const [pieces, setPieces] = useState([]);
   const [isGameStarted, setIsGameStarted] = useState(false);
   const [ui, setUi] = useState({
@@ -67,7 +61,7 @@ const CustomCulturalPuzzle = () => {
         const snapshot = await get(gameRef.current);
         if (!snapshot.exists()) {
           await set(gameRef.current, {
-            imageUrl: images[selectedImage],
+            imageUrl: '',
             isGameStarted: false,
             timer: 0,
             difficulty: gameState.difficulty,
@@ -116,7 +110,7 @@ const CustomCulturalPuzzle = () => {
     };
 
     initializeGame();
-  }, [gameState.gameId, selectedImage]);
+  }, [gameState.gameId]);
 
   // Timer management
   useEffect(() => {
@@ -221,6 +215,64 @@ const CustomCulturalPuzzle = () => {
     checkCompletion();
   }, [pieces, isGameStarted, gameState.isCompleted, handlePuzzleComplete]);
 
+  const handleImageUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUi(prev => ({ ...prev, loading: true, error: null, imageUploading: true }));
+      
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error('Image must be smaller than 5MB');
+      }
+      
+      if (!file.type.startsWith('image/')) {
+        throw new Error('File must be an image');
+      }
+
+      const imageRef = storageRef(storage, `puzzle-images/${gameState.gameId}/${file.name}`);
+      const snapshot = await uploadBytes(imageRef, file);
+      const url = await getDownloadURL(snapshot.ref);
+      
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = async () => {
+          try {
+            await update(gameRef.current, {
+              imageUrl: url,
+              imageSize: {
+                width: img.width,
+                height: img.height
+              }
+            });
+            
+            setGameState(prev => ({
+              ...prev,
+              imageUrl: url,
+              imageSize: { width: img.width, height: img.height }
+            }));
+            
+            setUi(prev => ({ ...prev, loading: false, imageUploading: false }));
+            resolve();
+          } catch (err) {
+            reject(new Error('Failed to update game with image information'));
+          }
+        };
+        
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = url;
+      });
+    } catch (err) {
+      console.error('Image upload error:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: err.message || 'Failed to upload image' },
+        loading: false,
+        imageUploading: false
+      }));
+    }
+  };
+
   const generatePuzzlePieces = () => {
     const positions = Array.from(
       { length: gameState.difficulty * gameState.difficulty },
@@ -255,7 +307,7 @@ const CustomCulturalPuzzle = () => {
   };
 
   const initializePuzzle = async () => {
-    if (!images[selectedImage]) return;
+    if (!gameState.imageUrl) return;
 
     try {
       setUi(prev => ({ ...prev, loading: true, error: null }));
@@ -268,8 +320,7 @@ const CustomCulturalPuzzle = () => {
         isGameStarted: true,
         startTime,
         timer: 0,
-        isCompleted: false,
-        imageUrl: images[selectedImage]
+        isCompleted: false
       };
       
       await update(gameRef.current, updates);
@@ -386,6 +437,20 @@ const CustomCulturalPuzzle = () => {
     return totalPieces > 0 ? (correctlyPlaced / totalPieces) * 100 : 0;
   };
 
+  const completionPercentage = calculateCompletionPercentage();
+  const data = {
+    labels: ['Completion'],
+    datasets: [
+      {
+        label: 'Completion Percentage',
+        data: [completionPercentage],
+        backgroundColor: 'rgba(75, 192, 192, 0.6)',
+        borderColor: 'rgba(75, 192, 192, 1)',
+        borderWidth: 1,
+      },
+    ],
+  };
+
   if (ui.loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -394,24 +459,10 @@ const CustomCulturalPuzzle = () => {
     );
   }
 
-  const completionPercentage = calculateCompletionPercentage();
-  const data = {
-    labels: ['Completion'],
-    datasets: [
-      {
-        label: 'Completion Percentage',
-        data: [completionPercentage],
-        backgroundColor: ['rgba(75, 192, 192, 0.6)'],
-        borderColor: ['rgba(75, 192, 192, 1)'],
-        borderWidth: 1,
-      },
-    ],
-  };
-
   return (
     <div className="flex flex-col gap-4 p-4 bg-white rounded-lg shadow-lg max-w-6xl mx-auto">
       <div className="flex items-center justify-between border-b pb-4">
-        <h1 className="text-2xl font-bold">Custom Cultural Puzzle</h1>
+        <h1 className="text-2xl font-bold">Custom User Puzzle</h1>
         <p>Welcome {user.name}</p>
         <div className="text-lg font-semibold">
           {`Time: ${String(Math.floor(gameState.timer / 60)).padStart(2, '0')}:${String(gameState.timer % 60).padStart(2, '0')}`}
@@ -451,22 +502,6 @@ const CustomCulturalPuzzle = () => {
           <span className="text-sm text-gray-600">
             ({gameState.difficulty * gameState.difficulty} pieces)
           </span>
-        </div>
-      )}
-
-      {!isGameStarted && (
-        // <div className="flex gap-4 mt-4 border ">
-        <div className="flex items-center justify-center gap-4 mt-4  ">
-          {Object.keys(images).map((key) => (
-            <div
-              key={key}
-              className={`p-4 border rounded-lg cursor-pointer ${selectedImage === key ? 'border-blue-500' : 'border-gray-300'}`}
-              onClick={() => setSelectedImage(key)}
-            >
-              <img src={images[key]} alt={key} className="w-16 h-16 object-cover rounded" />
-              <p className="text-center mt-2 capitalize">{key}</p>
-            </div>
-          ))}
         </div>
       )}
 
@@ -530,14 +565,20 @@ const CustomCulturalPuzzle = () => {
         <div className="flex-1">
           {!gameState.imageUrl ? (
             <div className="w-full p-8 border-2 border-dashed rounded-lg text-center">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="w-full"
+              />
               <p className="mt-2 text-sm text-gray-500">
-                Loading image...
+                {ui.imageUploading ? 'Uploading image...' : 'Upload an image to start the game'}
               </p>
             </div>
           ) : (
             <>
               <div className="flex justify-end mb-4">
-                <img src={images[selectedImage]} alt="Expected output" className="w-24 h-24 object-contain rounded border" />
+                <img src={gameState.imageUrl} alt="Expected output" className="w-1/6 h-1/6 object-cover rounded border" />
               </div>
               <div 
                 className="grid gap-1 transition-transform duration-200"
@@ -588,7 +629,7 @@ const CustomCulturalPuzzle = () => {
                                 ${piece.isPlaced ? 'ring-2 ring-green-500' : ''}
                                 ${ui.selectedPiece?.id === piece.id ? 'ring-2 ring-blue-500' : ''}`}
                               style={{
-                                backgroundImage: `url(${images[selectedImage]})`,
+                                backgroundImage: `url(${gameState.imageUrl})`,
                                 backgroundSize,
                                 backgroundPosition,
                                 transform: `rotate(${piece.rotation}deg)`
@@ -615,7 +656,7 @@ const CustomCulturalPuzzle = () => {
                 <div>Completion: {completionPercentage.toFixed(2)}%</div>
               </div>
               <div className="mt-4">
-                <Bar data={data} options={{ scales: { y: { beginAtZero: true, max: 100 } } }} />
+                <Bar data={data} options={{ indexAxis: 'y', scales: { x: { beginAtZero: true, max: 100 } } }} />
               </div>
             </>
           )}
@@ -625,4 +666,4 @@ const CustomCulturalPuzzle = () => {
   );
 };
 
-export default CustomCulturalPuzzle;
+export default CustomUserPuzzle;
