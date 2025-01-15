@@ -154,7 +154,7 @@ const Home = ({ user }) => {
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900">Best Time</h3>
             <p className="text-3xl font-bold text-green-600">
-              {userStats.bestTime ? `${Math.floor(userStats.bestTime / 60)}:${String(userStats.bestTime % 60).padStart(2, '0')}` : '--:--'}
+              {userStats.bestTime ? `${Math.floor(userStats.bestTime / 60)}:${String(Math.floor(userStats.bestTime % 60)).padStart(2, '0')}.${String(userStats.bestTime.toFixed(3).split('.')[1]).padEnd(3, '0').slice(0, 2)}` : '--:--'}
             </p>
           </div>
           <div className="bg-white rounded-lg shadow p-6">

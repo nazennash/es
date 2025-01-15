@@ -207,7 +207,9 @@ const UserStats = ({ userId }) => {
         </div>
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Best Time</h3>
-          <p className="text-3xl font-bold text-blue-600">{formatTime(summaryStats.bestTime)}</p>
+            <p className="text-3xl font-bold text-blue-600">
+            {summaryStats.bestTime ? `${Math.floor(summaryStats.bestTime / 60)}:${String(Math.floor(summaryStats.bestTime % 60)).padStart(2, '0')}.${String(summaryStats.bestTime.toFixed(3).split('.')[1]).padEnd(3, '0').slice(0, 2)}` : '--:--'}
+          </p>
           <p className="text-sm text-gray-500 mt-1">best completion time</p>
         </div>
         <div className="bg-white rounded-lg shadow p-6">
@@ -296,7 +298,9 @@ const UserStats = ({ userId }) => {
                         {puzzle.difficulty}x{puzzle.difficulty}
                       </span>
                     </td>
-                    <td className="px-4 py-3">{formatTime(puzzle.bestTime)}</td>
+                    <td className="px-4 py-3">
+                      {puzzle.bestTime ? `${Math.floor(puzzle.bestTime / 60)}:${String(Math.floor(puzzle.bestTime % 60)).padStart(2, '0')}.${String(puzzle.bestTime.toFixed(3).split('.')[1]).padEnd(3, '0').slice(0, 2)}` : '--:--'}
+                    </td>
                     <td className="px-4 py-3">
                       {new Date(puzzle.timestamp).toLocaleDateString()}
                     </td>
