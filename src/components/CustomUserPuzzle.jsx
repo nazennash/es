@@ -553,6 +553,9 @@ const CustomUserPuzzle = () => {
             </div>
           ) : (
             <>
+              <div className="flex justify-end mb-4">
+                <img src={gameState.imageUrl} alt="Expected output" className="w-1/6 h-1/6 object-cover rounded border" />
+              </div>
               <div 
                 className="grid gap-1 transition-transform duration-200"
                 style={{

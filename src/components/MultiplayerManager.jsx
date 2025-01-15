@@ -670,6 +670,9 @@ const MultiplayerPuzzle = () => {
             </div>
           ) : (
             <>
+              <div className="flex justify-end mb-4">
+                <img src={gameState.imageUrl} alt="Expected output" className="w-1/4 h-1/4 lg:w-1/6 lg:h-1/6 object-contain rounded border" />
+              </div>
               <div 
                 className="grid gap-1 transition-transform duration-200"
                 style={{

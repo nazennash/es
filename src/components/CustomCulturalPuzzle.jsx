@@ -389,7 +389,7 @@ const CustomCulturalPuzzle = () => {
   return (
     <div className="flex flex-col gap-4 p-4 bg-white rounded-lg shadow-lg max-w-6xl mx-auto">
       <div className="flex items-center justify-between border-b pb-4">
-        <h1 className="text-2xl font-bold">Custom User Puzzle</h1>
+        <h1 className="text-2xl font-bold">Custom Cultural Puzzle</h1>
         <p>Welcome {user.name}</p>
         <div className="text-lg font-semibold">
           {`Time: ${String(Math.floor(gameState.timer / 60)).padStart(2, '0')}:${String(gameState.timer % 60).padStart(2, '0')}`}
@@ -433,7 +433,8 @@ const CustomCulturalPuzzle = () => {
       )}
 
       {!isGameStarted && (
-        <div className="flex gap-4 mt-4">
+        // <div className="flex gap-4 mt-4 border ">
+        <div className="flex items-center justify-center gap-4 mt-4  ">
           {Object.keys(images).map((key) => (
             <div
               key={key}
@@ -513,6 +514,9 @@ const CustomCulturalPuzzle = () => {
             </div>
           ) : (
             <>
+              <div className="flex justify-end mb-4">
+                <img src={images[selectedImage]} alt="Expected output" className="w-24 h-24 object-contain rounded border" />
+              </div>
               <div 
                 className="grid gap-1 transition-transform duration-200"
                 style={{
