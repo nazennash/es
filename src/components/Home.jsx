@@ -1,7 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { auth } from '../firebase';
 import { useNavigate } from 'react-router-dom';
-import { getFirestore, collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
+// import { getFirestore, collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
+import { 
+  getFirestore, 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  getDocs,
+  doc,
+  getDoc,
+  limit,
+} from 'firebase/firestore';
 
 const Home = ({ user }) => {
   const navigate = useNavigate();
@@ -9,7 +20,8 @@ const Home = ({ user }) => {
   const [userStats, setUserStats] = useState({
     completed: 0,
     bestTime: null,
-    rank: null
+    rank: null,
+    averageTime: null
   });
   
   useEffect(() => {
@@ -27,36 +39,43 @@ const Home = ({ user }) => {
         );
 
         const puzzleSnap = await getDocs(puzzlesQuery);
-        setRecentPuzzles(puzzleSnap.docs.map(doc => ({
+        const recentPuzzlesData = puzzleSnap.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
-        })));
+        }));
+        setRecentPuzzles(recentPuzzlesData);
 
         const userData = JSON.parse(localStorage.getItem('authUser'));
         const userId = userData.uid;
-        
+        const userName = userData.displayName;
+
+        console.log('id', userId)
+
+
+
+        const userStatsRef = doc(collection(db, 'user_stats'), userId);
+        const userStatsSnap = await getDoc(userStatsRef);
+
         // Fetch user stats
         const statsRef = collection(db, 'user_stats');
-        
-        const fetchStats = async () => {
-          // const statsQuery = query(statsRef, where('userId', '==', user.uid));
-          
-          // console.log('id', user.uid)
-          // console.log('id2', userId)
+        const statsQuery = query(statsRef, where('userId', '==', user.uid));
+        const statsSnap = await getDocs(statsQuery);
 
-          const statsQuery = query(statsRef, where('userId', '==', user.uid));
-          const statsSnap = await getDocs(statsQuery);
-          if (!statsSnap.empty) {
-            const statsData = statsSnap.docs[0].data();
-            setUserStats({
-              completed: statsData.completed,
-              bestTime: statsData.bestTime,
-              rank: statsData.rank || null
-            });
-          }
-        };
+        // Calculate additional statistics
+        const totalTime = recentPuzzlesData.reduce((sum, puzzle) => sum + puzzle.completionTime, 0);
+        const averageTime = recentPuzzlesData.length ? Math.round(totalTime / recentPuzzlesData.length) : null;
+
+        if (userStatsSnap.exists()) {
+          const statsData = userStatsSnap.data();
+          setUserStats({
+            completed: statsData.completed || 0,
+            bestTime: statsData.bestTime,
+            averageTime,
+            rank: statsData.rank || null
+          });
+        }
         
-        fetchStats();
+      
       } catch (error) {
         console.error('Error fetching user data:', error);
       }
@@ -80,23 +99,12 @@ const Home = ({ user }) => {
       case 'custom':
         navigate(`/puzzle/custom`);
         break;
-      // case 'custom':
-      //   const newPuzzleId = `puzzle-${Date.now()}`;
-      //   navigate(`/puzzle/${newPuzzleId}`, { replace: true });
-      //   break;
-
       case 'cultural':
         navigate('/puzzle/cultural');
         break;
       case 'multiplayer':
         const sessionId = `session-${Date.now()}`;
         navigate(`/puzzle/multiplayer/${sessionId}`, { replace: true }, { state: { isHost: true, userId: user.uid } });
-        // navigate('/puzzle/multiplayer/new', { 
-          // state: { 
-          //   isHost: true,
-          //   userId: user.uid 
-          // }
-        // });
         break;
       default:
         break;
@@ -150,6 +158,12 @@ const Home = ({ user }) => {
             </p>
           </div>
           <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold text-gray-900">Average Time</h3>
+            <p className="text-3xl font-bold text-green-600">
+              {userStats.averageTime ? `${Math.floor(userStats.averageTime / 60)}:${String(userStats.averageTime % 60).padStart(2, '0')}` : '--:--'}
+            </p>
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900">Global Rank</h3>
             <p className="text-3xl font-bold text-purple-600">#{userStats.rank || '--'}</p>
           </div>
@@ -197,23 +211,14 @@ const Home = ({ user }) => {
             <h2 className="text-xl font-bold text-gray-900 mb-4">Recent Puzzles</h2>
             {recentPuzzles.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <p>{recentPuzzles.length}</p>
                 {recentPuzzles.map(puzzle => (
-
-                  
                   <div key={puzzle.id} className="border rounded-lg p-4">
-                    
                     <img 
                       src={puzzle.thumbnail} 
-                      // src={puzzle.imageUrl} 
                       alt={puzzle.name} 
-                      // className="w-full h-32 object-contain rounded mb-2"
                       className="w-full h-32 object-contain rounded mb-2"
                     />
                     <h3 className="font-semibold">{puzzle.name}</h3>
-                    {/* <p className="text-sm text-gray-600">
-                      Completed at {new Date(puzzle.completedAt.seconds * 1000).toLocaleString()} - {puzzle.timeElapsed} seconds - {puzzle.difficulty} difficulty - {puzzle.totalPieces} pieces
-                    </p> */}
                   </div>
                 ))}
               </div>

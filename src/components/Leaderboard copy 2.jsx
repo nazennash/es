@@ -10,21 +10,15 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { getDatabase, ref, get } from 'firebase/database';
-import { ChevronUp, ChevronDown, Filter } from 'lucide-react';
 
 const UserStats = ({ userId }) => {
   const [completedPuzzles, setCompletedPuzzles] = useState([]);
   const [currentPuzzles, setCurrentPuzzles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedDifficulty, setSelectedDifficulty] = useState('all');
-  const [sortConfig, setSortConfig] = useState({ field: 'timestamp', direction: 'desc' });
   const [summaryStats, setSummaryStats] = useState({
     totalCompleted: 0,
     bestTime: null,
-    averageTime: null,
-    completionRate: null,
-    difficultyBreakdown: {},
   });
 
   useEffect(() => {
@@ -63,7 +57,7 @@ const UserStats = ({ userId }) => {
             name: data.name || `${data.difficulty}x${data.difficulty} Puzzle`,
             bestTime: data.completionTime,
             difficulty: data.difficulty,
-            thumbnail: data.thumbnail || `/api/placeholder/100/100`,
+            thumbnail: data.thumbnail,
             timestamp: data.timestamp?.toDate()?.toISOString()
           };
         });
@@ -79,25 +73,11 @@ const UserStats = ({ userId }) => {
                 name: `${game.difficulty}x${game.difficulty} Puzzle`,
                 currentTime: game.currentTime || 0,
                 difficulty: game.difficulty,
-                thumbnail: game.thumbnail || `/api/placeholder/100/100`,
                 startedAt: new Date(game.startTime).toISOString()
               });
             }
           });
         }
-
-        // Calculate additional statistics
-        const difficultyBreakdown = completedResults.reduce((acc, puzzle) => {
-          acc[puzzle.difficulty] = (acc[puzzle.difficulty] || 0) + 1;
-          return acc;
-        }, {});
-
-        const totalTime = completedResults.reduce((sum, puzzle) => sum + puzzle.bestTime, 0);
-        const averageTime = completedResults.length ? Math.round(totalTime / completedResults.length) : null;
-
-        const completionRate = currentResults.length + completedResults.length > 0
-          ? (completedResults.length / (currentResults.length + completedResults.length) * 100).toFixed(1)
-          : 0;
 
         // Set summary stats
         if (userStatsSnap.exists()) {
@@ -105,9 +85,6 @@ const UserStats = ({ userId }) => {
           setSummaryStats({
             totalCompleted: statsData.completed || 0,
             bestTime: statsData.bestTime,
-            averageTime,
-            completionRate,
-            difficultyBreakdown,
           });
         }
 
@@ -145,41 +122,6 @@ const UserStats = ({ userId }) => {
     }
   };
 
-  const handleSort = (field) => {
-    setSortConfig(prev => ({
-      field,
-      direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc'
-    }));
-  };
-
-  const getSortedPuzzles = (puzzles) => {
-    if (!sortConfig.field) return puzzles;
-
-    return [...puzzles].sort((a, b) => {
-      if (sortConfig.field === 'timestamp' || sortConfig.field === 'startedAt') {
-        const dateA = new Date(a[sortConfig.field]);
-        const dateB = new Date(b[sortConfig.field]);
-        return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
-      }
-      if (sortConfig.field === 'bestTime' || sortConfig.field === 'currentTime') {
-        return sortConfig.direction === 'asc' 
-          ? (a[sortConfig.field] || 0) - (b[sortConfig.field] || 0)
-          : (b[sortConfig.field] || 0) - (a[sortConfig.field] || 0);
-      }
-      return 0;
-    });
-  };
-
-  const getFilteredPuzzles = (puzzles) => {
-    if (selectedDifficulty === 'all') return puzzles;
-    return puzzles.filter(puzzle => String(puzzle.difficulty) === selectedDifficulty);
-  };
-
-  const SortIcon = ({ field }) => {
-    if (sortConfig.field !== field) return null;
-    return sortConfig.direction === 'asc' ? <ChevronUp className="inline w-4 h-4" /> : <ChevronDown className="inline w-4 h-4" />;
-  };
-
   if (loading) {
     return (
       <div className="p-4">
@@ -199,7 +141,7 @@ const UserStats = ({ userId }) => {
   return (
     <div className="space-y-6">
       {/* Summary Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Total Completed</h3>
           <p className="text-3xl font-bold text-blue-600">{summaryStats.totalCompleted}</p>
@@ -210,47 +152,6 @@ const UserStats = ({ userId }) => {
           <p className="text-3xl font-bold text-blue-600">{formatTime(summaryStats.bestTime)}</p>
           <p className="text-sm text-gray-500 mt-1">best completion time</p>
         </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Average Time</h3>
-          <p className="text-3xl font-bold text-blue-600">{formatTime(summaryStats.averageTime)}</p>
-          <p className="text-sm text-gray-500 mt-1">per puzzle</p>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Completion Rate</h3>
-          <p className="text-3xl font-bold text-blue-600">{summaryStats.completionRate}%</p>
-          <p className="text-sm text-gray-500 mt-1">puzzles finished</p>
-        </div>
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Difficulty Split</h3>
-          <div className="space-y-2">
-            {Object.entries(summaryStats.difficultyBreakdown).map(([diff, count]) => (
-              <div key={diff} className="flex justify-between items-center">
-                <span className={`px-2 py-1 rounded-full text-xs ${getDifficultyStyle(diff)}`}>
-                  {diff}x{diff}
-                </span>
-                <span className="font-medium">{count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Filter Controls */}
-      <div className="bg-white rounded-lg shadow p-4 flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Filter className="w-5 h-5 text-gray-500" />
-          <span className="font-medium">Filter:</span>
-        </div>
-        <select
-          className="border rounded-md px-3 py-1.5"
-          value={selectedDifficulty}
-          onChange={(e) => setSelectedDifficulty(e.target.value)}
-        >
-          <option value="all">All Difficulties</option>
-          <option value="3">3x3</option>
-          <option value="4">4x4</option>
-          <option value="5">5x5</option>
-        </select>
       </div>
 
       {/* Completed Puzzles Section */}
@@ -263,33 +164,15 @@ const UserStats = ({ userId }) => {
             <table className="w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Preview</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Puzzle</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Difficulty</th>
-                  <th 
-                    className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer"
-                    onClick={() => handleSort('bestTime')}
-                  >
-                    Time <SortIcon field="bestTime" />
-                  </th>
-                  <th 
-                    className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer"
-                    onClick={() => handleSort('timestamp')}
-                  >
-                    Completed <SortIcon field="timestamp" />
-                  </th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">Time</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">Completed</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {getFilteredPuzzles(getSortedPuzzles(completedPuzzles)).map((puzzle) => (
+                {completedPuzzles.map((puzzle) => (
                   <tr key={puzzle.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <img 
-                        src={puzzle.thumbnail} 
-                        alt={puzzle.name}
-                        className="w-12 h-12 rounded object-cover"
-                      />
-                    </td>
                     <td className="px-4 py-3 font-medium">{puzzle.name}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-1 rounded-full text-xs ${getDifficultyStyle(puzzle.difficulty)}`}>
@@ -304,7 +187,7 @@ const UserStats = ({ userId }) => {
                 ))}
                 {completedPuzzles.length === 0 && (
                   <tr>
-                    <td colSpan="5" className="px-4 py-3 text-center text-gray-500">
+                    <td colSpan="4" className="px-4 py-3 text-center text-gray-500">
                       No completed puzzles yet
                     </td>
                   </tr>
@@ -314,30 +197,6 @@ const UserStats = ({ userId }) => {
           </div>
         </div>
       </div>
-
-      
-      {/* Current Puzzles Section
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-800">Current Puzzles</h2>
-        </div>
-        <div className="p-6">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Preview</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Puzzle</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Difficulty</th>
-                  <th 
-                    className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer"
-                    onClick={() => handleSort('currentTime')}
-                  >
-                    Current Time <SortIcon field="currentTime" />
-                  </th>
-                  <th 
-                    className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer"
-                    onClick={() => handleSort('  */}
 
       {/* Current Puzzles Section */}
       <div className="bg-white rounded-lg shadow">

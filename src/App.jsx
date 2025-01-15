@@ -69,7 +69,7 @@ const CulturalPuzzle = () => {
         isPredesigned={true}
       />
       <MultiplayerManager puzzleId={id} />
-      <Leaderboard puzzleId={id} />
+      <Leaderboard puzzleId={id} userId={userId} />
     </div>
   );
 };
@@ -198,7 +198,7 @@ const App = () => {
             {/* User Leaderboard Route */}
             <Route
               path="/user-leaderboard"
-              element={<PrivateRoute element={() => <Leaderboard puzzleId={user.uid} />} />}
+              element={<PrivateRoute element={() => <Leaderboard puzzleId={user.uid} userId={user.uid} />} />}
             />
           </Routes>
         </main>
