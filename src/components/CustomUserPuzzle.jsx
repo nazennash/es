@@ -6,6 +6,8 @@ import { useNavigate } from 'react-router-dom';
 import { handlePuzzleCompletion } from './PuzzleCompletionHandler';
 import { Bar } from 'react-chartjs-2';
 import 'chart.js/auto';
+import html2canvas from 'html2canvas';
+
 
 const CustomUserPuzzle = () => {
   const [gameState, setGameState] = useState({
