@@ -39,15 +39,13 @@ const culturalPuzzles = [
 
 // Component for multiplayer puzzle view
 const MultiplayerPuzzle = () => {
-  const { sessionId } = useParams();
+  const { gameId } = useParams();
   return (
     <div className="puzzle-container">
-
       <MultiplayerManager 
-        puzzleId={sessionId}
+        gameId={gameId}
         isHost={false}
         isMultiPlayer={true}
-        imageUrl="https://firebasestorage.googleapis.com/v0/b/nash-ac5c0.firebasestorage.app/o/puzzle-images%2F1736843575135-WhatsApp%20Image%202025-01-07%20at%2012.41.45_d81d1a26.jpg?alt=media&token=0e708d01-79d9-40b9-a403-8e4db66f34cb"
       />
     </div>
   );

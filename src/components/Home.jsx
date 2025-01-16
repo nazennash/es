@@ -99,13 +99,15 @@ const Home = ({ user }) => {
     switch(type) {
       case 'custom':
         navigate(`/puzzle/custom`);
+        window.reload();
         break;
       case 'cultural':
         navigate('/puzzle/cultural');
+        window.reload();
         break;
       case 'multiplayer':
-        const sessionId = `session-${Date.now()}`;
-        navigate(`/puzzle/multiplayer/${sessionId}`, { replace: true }, { state: { isHost: true, userId: user.uid } });
+        const gameId = `game-${Date.now()}`;
+        navigate(`/puzzle/multiplayer/${gameId}`, { replace: true });
         break;
       default:
         break;

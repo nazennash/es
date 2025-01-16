@@ -9,9 +9,14 @@ import { Bar } from 'react-chartjs-2';
 import 'chart.js/auto';
 import html2canvas from 'html2canvas';
 
-const MultiplayerPuzzle = () => {
+const MultiplayerPuzzle = ({ puzzleId, gameId}) => {
+  const userData = JSON.parse(localStorage.getItem('authUser'));
+  const userId = userData.uid;
+  const userName = userData.displayName || userData.email;
+
   const [gameState, setGameState] = useState({
-    gameId: window.location.pathname.split('/').pop() || `game-${Date.now()}`,
+    gameId: gameId || window.location.pathname.split('/').pop() || `game-${Date.now()}`,
+    // gameId: window.location.pathname.split('/').pop() || `game-${userId}-${Date.now()}`,
     imageUrl: '',
     isHost: false,
     difficulty: 3, 
@@ -23,31 +28,6 @@ const MultiplayerPuzzle = () => {
 
   const isTimerRunning = useRef(false);
   const [winner, setWinner] = useState(null);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const puzzleContainerRef = useRef(null);
-  const [pieces, setPieces] = useState([]);
-  const [players, setPlayers] = useState({});
-  const [isGameStarted, setIsGameStarted] = useState(false);
-  const [ui, setUi] = useState({
-    zoom: 1,
-    selectedPiece: null,
-    draggedPiece: null,
-    error: null,
-    showPlayers: true,
-    loading: true,
-    gridDimensions: { width: 0, height: 0 },
-    cellDimensions: { width: 0, height: 0 }
-  });
-  const [hasCheckedCompletion, setHasCheckedCompletion] = useState(false);
-
-  const storage = getStorage();
-  const database = getDatabase();
-  const userData = JSON.parse(localStorage.getItem('authUser'));
-  const userId = userData.uid;
-  const userName = userData.displayName || userData.email;
-  const user = { id: userId || `user-${Date.now()}`, name: userName || `Player ${Math.floor(Math.random() * 1000)}` };
-  const navigate = useNavigate();
-  const timerRef = useRef(null);
 
   // Function to get player with highest score
   const getHighestScoringPlayer = () => {
@@ -56,7 +36,6 @@ const MultiplayerPuzzle = () => {
     }, null);
   };
 
-  // Winner Notification Component
   const WinnerNotification = ({ winner }) => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
@@ -76,7 +55,56 @@ const MultiplayerPuzzle = () => {
     </div>
   );
 
-  // Share Modal Component
+  const [showShareModal, setShowShareModal] = useState(false);
+  const puzzleContainerRef = useRef(null);
+
+  const capturePuzzleImage = async () => {
+    if (!puzzleContainerRef.current) return null;
+    try {
+      const canvas = await html2canvas(puzzleContainerRef.current);
+      return canvas.toDataURL('image/png');
+    } catch (err) {
+      console.error('Failed to capture puzzle image:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to capture puzzle image' }
+      }));
+      return null;
+    }
+  };
+
+  const downloadPuzzleImage = async () => {
+    const imageData = await capturePuzzleImage();
+    if (!imageData) return;
+
+    const link = document.createElement('a');
+    link.href = imageData;
+    link.download = `puzzle-${gameState.gameId}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+
+  const shareToFacebook = () => {
+    const url = encodeURIComponent(`${window.location.origin}/#/puzzle/multiplayer/${gameState.gameId}`);
+    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself!`);
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, '_blank');
+  };
+
+  const shareToTwitter = () => {
+    const url = encodeURIComponent(`${window.location.origin}/#/puzzle/multiplayer/${gameState.gameId}`);
+    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself! #PuzzleGame`);
+    window.open(`https://twitter.com/intent/tweet?url=${url}&text=${text}`, '_blank');
+  };
+
+  const shareToWhatsApp = () => {
+    const url = encodeURIComponent(`${window.location.origin}/#/puzzle/multiplayer/${gameState.gameId}`);
+    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself!`);
+    window.open(`https://wa.me/?text=${text}%20${url}`, '_blank');
+  };
+
+
   const ShareModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
@@ -117,55 +145,33 @@ const MultiplayerPuzzle = () => {
     </div>
   );
 
-  // Capture Puzzle Image
-  const capturePuzzleImage = async () => {
-    if (!puzzleContainerRef.current) return null;
-    try {
-      const canvas = await html2canvas(puzzleContainerRef.current);
-      return canvas.toDataURL('image/png');
-    } catch (err) {
-      console.error('Failed to capture puzzle image:', err);
-      setUi(prev => ({
-        ...prev,
-        error: { type: 'error', message: 'Failed to capture puzzle image' }
-      }));
-      return null;
-    }
+  const [pieces, setPieces] = useState([]);
+  const [players, setPlayers] = useState({});
+  const [isGameStarted, setIsGameStarted] = useState(false);
+  const [ui, setUi] = useState({
+    zoom: 1,
+    selectedPiece: null,
+    draggedPiece: null,
+    error: null,
+    showPlayers: true,
+    loading: true,
+    gridDimensions: { width: 0, height: 0 },
+    cellDimensions: { width: 0, height: 0 }
+  });
+
+  const storage = getStorage();
+  const database = getDatabase();
+
+  
+
+  const user = { 
+    id: userId || `user-${Date.now()}`, 
+    name: userName || `Player ${Math.floor(Math.random() * 1000)}` 
   };
 
-  // Download Puzzle Image
-  const downloadPuzzleImage = async () => {
-    const imageData = await capturePuzzleImage();
-    if (!imageData) return;
+  const navigate = useNavigate();
+  const timerRef = useRef(null);
 
-    const link = document.createElement('a');
-    link.href = imageData;
-    link.download = `puzzle-${gameState.gameId}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // Share to Social Media
-  const shareToFacebook = () => {
-    const url = encodeURIComponent(window.location.href);
-    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself!`);
-    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, '_blank');
-  };
-
-  const shareToTwitter = () => {
-    const url = encodeURIComponent(window.location.href);
-    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself! #PuzzleGame`);
-    window.open(`https://twitter.com/intent/tweet?url=${url}&text=${text}`, '_blank');
-  };
-
-  const shareToWhatsApp = () => {
-    const url = encodeURIComponent(window.location.href);
-    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself!`);
-    window.open(`https://wa.me/?text=${text}%20${url}`, '_blank');
-  };
-
-  // Timer Management
   useEffect(() => {
     let timerInterval;
 
@@ -193,7 +199,7 @@ const MultiplayerPuzzle = () => {
     };
   }, [isGameStarted, gameState.startTime, gameState.isCompleted]);
 
-  // Initialize Game
+
   useEffect(() => {
     try {
       if (!localStorage.getItem('userId')) {
@@ -233,9 +239,9 @@ const MultiplayerPuzzle = () => {
             imageUrl: '',
             isGameStarted: false,
             timer: 0,
-            difficulty: gameState.difficulty,
-            startTime: null,
-            imageSize: gameState.imageSize
+            difficulty: gameState.difficulty, // Ensure difficulty is set in Firebase
+            startTime: null, // Ensure startTime is set to null in Firebase
+            imageSize: gameState.imageSize // Ensure imageSize is set in Firebase
           });
           setGameState(prev => ({ ...prev, isHost: true }));
         } else {
@@ -244,8 +250,8 @@ const MultiplayerPuzzle = () => {
             ...prev,
             difficulty: data.difficulty || 3,
             isHost: data.players?.[userId]?.isHost || false,
-            startTime: data.startTime || null,
-            imageSize: data.imageSize || { width: 0, height: 0 }
+            startTime: data.startTime || null, // Get startTime from Firebase
+            imageSize: data.imageSize || { width: 0, height: 0 } // Get imageSize from Firebase
           }));
           
           if (!data.players?.[userId]) {
@@ -321,7 +327,6 @@ const MultiplayerPuzzle = () => {
     };
   }, [gameState.gameId, userId, database]);
 
-  // Start Timer
   useEffect(() => {
     if (isGameStarted) {
       if (!gameState.startTime) {
@@ -329,7 +334,7 @@ const MultiplayerPuzzle = () => {
         setGameState(prev => ({ ...prev, startTime }));
         timerRef.current = setInterval(() => {
           const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-          console.log(`Timer updated: ${elapsedSeconds} seconds`);
+          console.log(`Timer updated: ${elapsedSeconds} seconds`); // Log timer updates
           setGameState(prev => ({ ...prev, timer: elapsedSeconds }));
         }, 1000);
       }
@@ -342,11 +347,9 @@ const MultiplayerPuzzle = () => {
     };
   }, [isGameStarted]);
 
-  // Check Puzzle Completion
   useEffect(() => {
     const checkCompletion = async () => {
-      if (isGameStarted && pieces.length > 0 && isPuzzleComplete(pieces) && !hasCheckedCompletion) {
-        setHasCheckedCompletion(true);
+      if (isGameStarted && pieces.length > 0 && isPuzzleComplete(pieces)) {
         try {
           const highestScoringPlayer = getHighestScoringPlayer();
 
@@ -367,54 +370,60 @@ const MultiplayerPuzzle = () => {
             console.log('Data sent to handlePuzzleCompletion:', completionData);
             await handlePuzzleCompletion(completionData);
 
-            const gameRef = dbRef(database, `games/${gameState.gameId}`);
-            const playerSnapshot = await get(dbRef(database, `games/${gameState.gameId}/players/${highestScoringPlayer.id}`));
-            const currentScore = playerSnapshot.val()?.score || 0;
+          const gameRef = dbRef(database, `games/${gameState.gameId}`);
+          const playerSnapshot = await get(dbRef(database, `games/${gameState.gameId}/players/${highestScoringPlayer.id}`));
+          const currentScore = playerSnapshot.val()?.score || 0;
 
-            console.log("current-score", currentScore);
+          console.log("current-score", currentScore);
             
-            await update(gameRef, { 
-              isGameStarted: false, 
-              completionTime,
-              winner: {
-                name: highestScoringPlayer.name,
-                score: currentScore + 1,
-                id: highestScoringPlayer.id
-              }
-            });
+          await update(gameRef, { 
+            isGameStarted: false, 
+            completionTime,
+            winner: {
+              name: highestScoringPlayer.name,
+              score: currentScore + 1, // Use the fetched current score
+              id: highestScoringPlayer.id
+            }
+          });
 
-            await update(dbRef(database, `games/${gameState.gameId}/players/${highestScoringPlayer.id}`), {
-              score: currentScore + 1
-            });
+          await update(dbRef(database, `games/${gameState.gameId}/players/${highestScoringPlayer.id}`), {
+            score: currentScore + 1
+          });
 
-            const playerScoreUpdate = {
-              [`players/${highestScoringPlayer.id}/score`]: currentScore + 1
-            };
-            await update(gameRef, playerScoreUpdate);
+          // Increment the score by +2
+          // const playerScoreUpdate = {
+          //   [`players/${userId}/score`]: (players[userId]?.score || 0) + 1
+          // };
+          // await update(gameRef, playerScoreUpdate);
 
-            // Show winner notification
-            setWinner(highestScoringPlayer);
+          const playerScoreUpdate = {
+            [`players/${highestScoringPlayer.id}/score`]: currentScore + 1
+          };
+          await update(gameRef, playerScoreUpdate);
 
-            // Show share modal
-            setShowShareModal(true);
+          // Show winner notification
+          setWinner(highestScoringPlayer);
 
-            setUi(prev => ({
-              ...prev,
-              error: { 
-                type: 'success', 
-                message: `Puzzle completed by ${highestScoringPlayer.name}! They win with a score of ${highestScoringPlayer.score + 1}!` 
-              }
-            }));
-          } else {
-            // Notify other players they can't complete the puzzle
-            setUi(prev => ({
-              ...prev,
-              error: { 
-                type: 'info', 
-                message: `Only ${highestScoringPlayer.name} (highest score) can complete the puzzle!` 
-              }
-            }));
-          }
+          // Show share modal
+          setShowShareModal(true);
+
+          setUi(prev => ({
+            ...prev,
+            error: { 
+              type: 'success', 
+              message: `Puzzle completed by ${highestScoringPlayer.name}! They win with a score of ${highestScoringPlayer.score + 1}!` 
+            }
+          }));
+        } else {
+          // Notify other players they can't complete the puzzle
+          setUi(prev => ({
+            ...prev,
+            error: { 
+              type: 'info', 
+              message: `Only ${highestScoringPlayer.name} (highest score) can complete the puzzle!` 
+            }
+          }));
+        }
 
 
         } catch (err) {
@@ -431,7 +440,7 @@ const MultiplayerPuzzle = () => {
     };
     
     checkCompletion();
-  }, [pieces, isGameStarted, userId, players, hasCheckedCompletion]);
+  }, [pieces, isGameStarted, userId, players]);
 
   const clearSession = async () => {
     try {
@@ -631,7 +640,9 @@ const MultiplayerPuzzle = () => {
   };
 
   const copyGameLink = async () => {
-    const link = `${window.location.origin}/puzzle/multiplayer/${gameState.gameId}`;
+    const link = `${window.location.origin}/#/puzzle/multiplayer/${gameState.gameId}`;
+    console.log('Copying game link:', link);
+    console.log('game_id:', gameState.gameId);
     try {
       await navigator.clipboard.writeText(link);
       setUi(prev => ({
