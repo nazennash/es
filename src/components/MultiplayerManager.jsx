@@ -7,6 +7,7 @@ import { LogOut, Home } from 'lucide-react';
 import { handlePuzzleCompletion, isPuzzleComplete } from './PuzzleCompletionHandler';
 import { Bar } from 'react-chartjs-2';
 import 'chart.js/auto';
+import html2canvas from 'html2canvas';
 
 const MultiplayerPuzzle = () => {
   const [gameState, setGameState] = useState({
@@ -18,6 +19,101 @@ const MultiplayerPuzzle = () => {
     imageSize: { width: 0, height: 0 }, // Ensure imageSize is initialized
     startTime: null // Initialize startTime as null
   });
+
+  // new state for sharing modal
+  const [showShareModal, setShowShareModal] = useState(false);
+  const puzzleContainerRef = useRef(null);
+
+  // Function to capture puzzle as image
+  const capturePuzzleImage = async () => {
+    if (!puzzleContainerRef.current) return null;
+    try {
+      const canvas = await html2canvas(puzzleContainerRef.current);
+      return canvas.toDataURL('image/png');
+    } catch (err) {
+      console.error('Failed to capture puzzle image:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to capture puzzle image' }
+      }));
+      return null;
+    }
+  };
+
+  // Function to download puzzle image
+  const downloadPuzzleImage = async () => {
+    const imageData = await capturePuzzleImage();
+    if (!imageData) return;
+
+    const link = document.createElement('a');
+    link.href = imageData;
+    link.download = `puzzle-${gameState.gameId}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+
+  // Social sharing functions
+  const shareToFacebook = () => {
+    const url = encodeURIComponent(window.location.href);
+    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself!`);
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, '_blank');
+  };
+
+  const shareToTwitter = () => {
+    const url = encodeURIComponent(window.location.href);
+    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself! #PuzzleGame`);
+    window.open(`https://twitter.com/intent/tweet?url=${url}&text=${text}`, '_blank');
+  };
+
+  const shareToWhatsApp = () => {
+    const url = encodeURIComponent(window.location.href);
+    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself!`);
+    window.open(`https://wa.me/?text=${text}%20${url}`, '_blank');
+  };
+
+
+  // Share Modal Component
+  const ShareModal = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+        <h3 className="text-xl font-bold mb-4">Share Your Achievement</h3>
+        <div className="space-y-4">
+          <button
+            onClick={shareToFacebook}
+            className="w-full p-3 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Share on Facebook
+          </button>
+          <button
+            onClick={shareToTwitter}
+            className="w-full p-3 bg-sky-400 text-white rounded hover:bg-sky-500"
+          >
+            Share on Twitter
+          </button>
+          <button
+            onClick={shareToWhatsApp}
+            className="w-full p-3 bg-green-500 text-white rounded hover:bg-green-600"
+          >
+            Share on WhatsApp
+          </button>
+          <button
+            onClick={downloadPuzzleImage}
+            className="w-full p-3 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 flex items-center justify-center gap-2"
+          >
+            <Download className="h-4 w-4" /> Download Image
+          </button>
+        </div>
+        <button
+          onClick={() => setShowShareModal(false)}
+          className="mt-4 w-full p-2 border border-gray-300 rounded hover:bg-gray-50"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
 
   const [pieces, setPieces] = useState([]);
   const [players, setPlayers] = useState({});
@@ -230,6 +326,10 @@ const MultiplayerPuzzle = () => {
               message: 'Puzzle completed! Score recorded.' 
             }
           }));
+
+          // Show share modal on completion
+          setShowShareModal(true);  
+
         } catch (err) {
           console.error('Failed to record completion:', err);
           setUi(prev => ({
@@ -655,6 +755,17 @@ const MultiplayerPuzzle = () => {
         >
           <Play className="h-4 w-4" />
         </button>
+
+        {gameState.isCompleted && (
+          <button
+            onClick={() => setShowShareModal(true)}
+            className="p-2 border rounded hover:bg-gray-100"
+            title="Share"
+          >
+            <Share2 className="h-4 w-4" />
+          </button>
+        )}
+
         {gameState.isHost && !isGameStarted && (
           <button
             onClick={initializePuzzle}
@@ -678,7 +789,8 @@ const MultiplayerPuzzle = () => {
         </div>
       )}
 
-      <div className="flex gap-4">
+      <div ref={puzzleContainerRef} className="flex gap-4"> 
+      {/* <div className="flex gap-4"> */}
         <div className="flex-1">
           {gameState.isHost && !gameState.imageUrl ? (
             <div className="w-full p-8 border-2 border-dashed rounded-lg text-center">
