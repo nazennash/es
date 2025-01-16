@@ -8,14 +8,15 @@ export const handlePuzzleCompletion = async ({
   startTime, 
   difficulty,
   imageUrl,
-  timer
+  timer // Include timer in the parameters
 }) => {
   const db = getFirestore();
   const rtdb = getDatabase();
   
   try {
+    // Calculate completion time
     const completionTime = timer;
-
+    
     // Add score to puzzle_scores collection
     const scoreData = {
       puzzleId,
@@ -26,9 +27,10 @@ export const handlePuzzleCompletion = async ({
       timestamp: new Date(),
       imageUrl
     };
+    
     console.log('Score Data:', scoreData);
     await addDoc(collection(db, 'puzzle_scores'), scoreData);
-
+    
     // Add to completed_puzzles collection
     const puzzleData = {
       puzzleId,
@@ -39,9 +41,10 @@ export const handlePuzzleCompletion = async ({
       thumbnail: imageUrl,
       name: `${difficulty}x${difficulty} Puzzle`
     };
+    
     console.log('Puzzle Data:', puzzleData);
     await addDoc(collection(db, 'completed_puzzles'), puzzleData);
-
+    
     // Update user stats
     const userStatsRef = collection(db, 'user_stats');
     const userStatDoc = doc(userStatsRef, userId);
@@ -63,22 +66,23 @@ export const handlePuzzleCompletion = async ({
         id: userId
       });
     }
-
+    
     // Update realtime game state
     const gameRef = ref(rtdb, `games/${puzzleId}`);
     const gameSnap = await get(gameRef);
     const gameData = gameSnap.val();
-
+    
     if (gameData) {
       const updates = {
         [`games/${puzzleId}/isCompleted`]: true,
         [`games/${puzzleId}/completionTime`]: completionTime,
         [`games/${puzzleId}/completedBy`]: userId
       };
+      
       console.log('Realtime Database Updates:', updates);
       await update(ref(rtdb), updates);
     }
-
+    
     return { success: true, completionTime };
   } catch (error) {
     console.error('Error handling puzzle completion:', error);

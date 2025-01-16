@@ -14,15 +14,14 @@ const MultiplayerPuzzle = () => {
     gameId: window.location.pathname.split('/').pop() || `game-${Date.now()}`,
     imageUrl: '',
     isHost: false,
-    difficulty: 3, // Set a default value
+    difficulty: 3, 
     timer: 0,
-    imageSize: { width: 0, height: 0 }, // Ensure imageSize is initialized
-    startTime: null, // Initialize startTime as null
+    imageSize: { width: 0, height: 0 }, 
+    startTime: null, 
     lastUpdateTime: null
   });
 
   const isTimerRunning = useRef(false);
-  // Add new state for winner notification
   const [winner, setWinner] = useState(null);
 
   // Function to get player with highest score
@@ -51,11 +50,9 @@ const MultiplayerPuzzle = () => {
     </div>
   );
 
-  // new state for sharing modal
   const [showShareModal, setShowShareModal] = useState(false);
   const puzzleContainerRef = useRef(null);
 
-  // Function to capture puzzle as image
   const capturePuzzleImage = async () => {
     if (!puzzleContainerRef.current) return null;
     try {
@@ -71,7 +68,6 @@ const MultiplayerPuzzle = () => {
     }
   };
 
-  // Function to download puzzle image
   const downloadPuzzleImage = async () => {
     const imageData = await capturePuzzleImage();
     if (!imageData) return;
@@ -85,7 +81,6 @@ const MultiplayerPuzzle = () => {
   };
 
 
-  // Social sharing functions
   const shareToFacebook = () => {
     const url = encodeURIComponent(window.location.href);
     const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself!`);
@@ -105,7 +100,6 @@ const MultiplayerPuzzle = () => {
   };
 
 
-  // Share Modal Component
   const ShareModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
@@ -203,7 +197,6 @@ const MultiplayerPuzzle = () => {
   }, [isGameStarted, gameState.startTime, gameState.isCompleted]);
 
 
-  // Save user info to localStorage
   useEffect(() => {
     try {
       if (!localStorage.getItem('userId')) {
@@ -219,7 +212,6 @@ const MultiplayerPuzzle = () => {
     }
   }, [user.id, user.name]);
 
-  // Initialize game and set up listeners
   useEffect(() => {
     let unsubscribe;
     const gameRef = dbRef(database, `games/${gameState.gameId}`);
@@ -332,7 +324,6 @@ const MultiplayerPuzzle = () => {
     };
   }, [gameState.gameId, userId, database]);
 
-  // Timer effect
   useEffect(() => {
     if (isGameStarted) {
       if (!gameState.startTime) {
@@ -403,7 +394,7 @@ const MultiplayerPuzzle = () => {
           // await update(gameRef, playerScoreUpdate);
 
           const playerScoreUpdate = {
-            [`players/${highestScoringPlayer.id}/score`]: currentScore - 6
+            [`players/${highestScoringPlayer.id}/score`]: currentScore + 1
           };
           await update(gameRef, playerScoreUpdate);
 
@@ -450,26 +441,21 @@ const MultiplayerPuzzle = () => {
 
   const clearSession = async () => {
     try {
-      // Remove player from the game
       const updates = {};
       updates[`games/${gameState.gameId}/players/${userId}`] = null;
       await update(dbRef(database), updates);
 
-      // Clear local storage
       localStorage.removeItem('userId');
       localStorage.removeItem('userName');
 
-      // Check if host and if there are other players
       const gameRef = dbRef(database, `games/${gameState.gameId}`);
       const snapshot = await get(gameRef);
       const data = snapshot.val();
       
       if (gameState.isHost && (!data?.players || Object.keys(data.players).length === 0)) {
-        // If host is leaving and no other players, clear the entire game
         await set(gameRef, null);
       }
 
-      // Navigate to home
       navigate('/');
     } catch (err) {
       console.error('Failed to clear session:', err);
@@ -482,12 +468,10 @@ const MultiplayerPuzzle = () => {
 
   const leaveSession = async () => {
     try {
-      // Remove player from the game
       const updates = {};
       updates[`games/${gameState.gameId}/players/${userId}`] = null;
       await update(dbRef(database), updates);
 
-      // Navigate to home
       navigate('/');
     } catch (err) {
       console.error('Failed to leave session:', err);
