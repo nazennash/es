@@ -348,101 +348,96 @@ const MultiplayerPuzzle = ({ puzzleId, gameId}) => {
   }, [isGameStarted]);
 
   useEffect(() => {
-  const checkCompletion = async () => {
-    const totalPieces = pieces.length;
-    const correctlyPlaced = pieces.filter(p => p.isPlaced).length;
-
-    if (isGameStarted && totalPieces > 0 && totalPieces === correctlyPlaced) {
-      if (isPuzzleComplete(pieces)) {
-        if (timerRef.current) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
-        }
-
-        try {
-          const highestScoringPlayer = getHighestScoringPlayer();
-
-          if (highestScoringPlayer.id === userId) {
-            const completionTime = Date.now() - gameState.startTime;
-
-            // First, handle the puzzle completion record
-            const completionData = {
-              puzzleId: gameState.gameId,
-              userId: userId,
-              playerName: userName,
-              startTime: gameState.startTime,
-              difficulty: gameState.difficulty,
-              imageUrl: gameState.imageUrl,
-              timer: completionTime / 1000
-            };
-
-            console.log('Data sent to handlePuzzleCompletion:', completionData);
-            await handlePuzzleCompletion(completionData);
-
-            const gameRef = dbRef(database, `games/${gameState.gameId}`);
-            const playerSnapshot = await get(dbRef(database, `games/${gameState.gameId}/players/${highestScoringPlayer.id}`));
-            const currentScore = playerSnapshot.val()?.score || 0;
-
-            console.log("current-score", currentScore);
-
-            await update(gameRef, { 
-              isGameStarted: false, 
-              completionTime,
-              winner: {
-                name: highestScoringPlayer.name,
-                score: currentScore + 1, // Use the fetched current score
-                id: highestScoringPlayer.id
-              }
-            });
-
-            await update(dbRef(database, `games/${gameState.gameId}/players/${highestScoringPlayer.id}`), {
-              score: currentScore + 1
-            });
-
-            const playerScoreUpdate = {
-              [`players/${highestScoringPlayer.id}/score`]: currentScore + 1
-            };
-            await update(gameRef, playerScoreUpdate);
-
-            // Show winner notification
-            setWinner(highestScoringPlayer);
-
-            // Show share modal
-            setShowShareModal(true);
-
+    const checkCompletion = async () => {
+      const totalPieces = pieces.length;
+      const correctlyPlaced = pieces.filter(p => p.isPlaced).length;
+  
+      if (isGameStarted && totalPieces > 0 && totalPieces === correctlyPlaced) {
+        if (isPuzzleComplete(pieces)) {
+          try {
+            const highestScoringPlayer = getHighestScoringPlayer();
+  
+            if (highestScoringPlayer.id === userId) {
+              const completionTime = Date.now() - gameState.startTime;
+              
+              // First, handle the puzzle completion record
+              const completionData = {
+                puzzleId: gameState.gameId,
+                userId: userId,
+                playerName: userName,
+                startTime: gameState.startTime,
+                difficulty: gameState.difficulty,
+                imageUrl: gameState.imageUrl,
+                timer: completionTime / 1000
+              };
+  
+              console.log('Data sent to handlePuzzleCompletion:', completionData);
+              await handlePuzzleCompletion(completionData);
+  
+              const gameRef = dbRef(database, `games/${gameState.gameId}`);
+              const playerSnapshot = await get(dbRef(database, `games/${gameState.gameId}/players/${highestScoringPlayer.id}`));
+              const currentScore = playerSnapshot.val()?.score || 0;
+  
+              console.log("current-score", currentScore);
+              
+              await update(gameRef, { 
+                isGameStarted: false, 
+                completionTime,
+                winner: {
+                  name: highestScoringPlayer.name,
+                  score: currentScore + 1, // Use the fetched current score
+                  id: highestScoringPlayer.id
+                }
+              });
+  
+              await update(dbRef(database, `games/${gameState.gameId}/players/${highestScoringPlayer.id}`), {
+                score: currentScore + 1
+              });
+  
+              const playerScoreUpdate = {
+                [`players/${highestScoringPlayer.id}/score`]: currentScore + 1
+              };
+              await update(gameRef, playerScoreUpdate);
+  
+              // Show winner notification
+              setWinner(highestScoringPlayer);
+  
+              // Show share modal
+              setShowShareModal(true);
+  
+              setUi(prev => ({
+                ...prev,
+                error: { 
+                  type: 'success', 
+                  message: `Puzzle completed by ${highestScoringPlayer.name}! They win with a score of ${highestScoringPlayer.score + 1}!` 
+                }
+              }));
+            } else {
+              // Notify other players they can't complete the puzzle
+              setUi(prev => ({
+                ...prev,
+                error: { 
+                  type: 'info', 
+                  message: `Only ${highestScoringPlayer.name} (highest score) can complete the puzzle!` 
+                }
+              }));
+            }
+          } catch (err) {
+            console.error('Failed to record completion:', err);
             setUi(prev => ({
               ...prev,
               error: { 
-                type: 'success', 
-                message: `Puzzle completed by ${highestScoringPlayer.name}! They win with a score of ${highestScoringPlayer.score + 1}!` 
-              }
-            }));
-          } else {
-            // Notify other players they can't complete the puzzle
-            setUi(prev => ({
-              ...prev,
-              error: { 
-                type: 'info', 
-                message: `Only ${highestScoringPlayer.name} (highest score) can complete the puzzle!` 
+                type: 'error', 
+                message: 'Failed to record puzzle completion' 
               }
             }));
           }
-        } catch (err) {
-          console.error('Failed to record completion:', err);
-          setUi(prev => ({
-            ...prev,
-            error: { 
-              type: 'error', 
-              message: 'Failed to record puzzle completion' 
-            }
-          }));
         }
       }
-    }
-  };
-
-  checkCompletion();
-}, [pieces, isGameStarted, userId, players]);
+    };
+    
+    checkCompletion();
+  }, [pieces, isGameStarted, userId, players]);
 
   const clearSession = async () => {
     try {
