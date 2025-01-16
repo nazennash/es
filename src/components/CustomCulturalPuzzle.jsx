@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getDatabase, ref as dbRef, set, update, get, onValue, off } from 'firebase/database';
-import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Play, Home, LogOut } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Play, Home, LogOut, Share2, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { handlePuzzleCompletion } from './PuzzleCompletionHandler';
 import elephant from '../assets/elephant.png';
@@ -152,7 +152,47 @@ const CustomCulturalPuzzle = () => {
     name: userName || `Player ${Math.floor(Math.random() * 1000)}` 
   };
 
-  // console.log(user);
+  const handleImageUpload = async (event) => {
+      if (!gameState.isHost) return;
+      
+      const file = event.target.files?.[0];
+      if (!file) return;
+  
+      try {
+        setUi(prev => ({ ...prev, loading: true, error: null }));
+        const imageRef = storageRef(storage, `puzzle-images/${gameState.gameId}/${file.name}`);
+        const snapshot = await uploadBytes(imageRef, file);
+        const url = await getDownloadURL(snapshot.ref);
+        
+        const img = new Image();
+        img.onload = async () => {
+          try {
+            const updates = {
+              [`games/${gameState.gameId}/imageUrl`]: url,
+              [`games/${gameState.gameId}/imageSize`]: {
+                width: img.width,
+                height: img.height
+              }
+            };
+            await update(dbRef(database), updates);
+            setUi(prev => ({ ...prev, loading: false }));
+          } catch (err) {
+            throw new Error('Failed to update game with image information');
+          }
+        };
+        img.onerror = () => {
+          throw new Error('Failed to load image');
+        };
+        img.src = url;
+      } catch (err) {
+        console.error('Image upload error:', err);
+        setUi(prev => ({
+          ...prev,
+          error: { type: 'error', message: err.message || 'Failed to upload image' },
+          loading: false
+        }));
+      }
+    };
 
   // Initialize game and set up Firebase listeners
   useEffect(() => {
@@ -731,6 +771,7 @@ const CustomCulturalPuzzle = () => {
           )}
         </div>
       </div>
+      {showShareModal && <ShareModal />}
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getDatabase, ref as dbRef, set, onValue, update, get } from 'firebase/database';
-import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Share2, Play, Users } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Share2, Play, Users, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { LogOut, Home } from 'lucide-react';
 import { handlePuzzleCompletion, isPuzzleComplete } from './PuzzleCompletionHandler';
@@ -915,6 +915,7 @@ const MultiplayerPuzzle = () => {
           </div>
         )}
       </div>
+      {showShareModal && <ShareModal />}
     </div>
   );
 };
