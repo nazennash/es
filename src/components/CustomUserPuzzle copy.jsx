@@ -773,6 +773,7 @@ const CustomUserPuzzle = () => {
           )}
         </div>
       </div>
+      
       {showShareModal && <ShareModal />}
     </div>
   );
