@@ -43,7 +43,8 @@ const Home = ({ user }) => {
           id: doc.id,
           ...doc.data()
         }));
-        setRecentPuzzles(recentPuzzlesData);
+        // setRecentPuzzles(recentPuzzlesData);
+        setRecentPuzzles(recentPuzzlesData.reverse()); // Reverse to start with the latest
 
         const userData = JSON.parse(localStorage.getItem('authUser'));
         const userId = userData.uid;
