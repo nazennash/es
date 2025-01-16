@@ -518,6 +518,8 @@ const handlePuzzleComplete = async () => {
       }));
       setIsGameStarted(true);
       setUi(prev => ({ ...prev, loading: false }));
+
+      initializeScene(); // Initialize the scene when the play button is pressed
       
     } catch (err) {
       console.error('Failed to initialize puzzle:', err);
