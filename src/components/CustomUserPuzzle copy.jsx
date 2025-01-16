@@ -388,13 +388,14 @@ const CustomUserPuzzle = () => {
         const pos = positions[posIndex++];
         const currentX = Math.floor(pos / gameState.difficulty);
         const currentY = pos % gameState.difficulty;
+        const isPlaced = currentX === i && currentY === j;
         
         newPieces.push({
           id: `piece-${i}-${j}`,
           correct: { x: i, y: j },
           current: { x: currentX, y: currentY },
-          rotation: Math.floor(Math.random() * 4) * 90,
-          isPlaced: false
+          rotation: 0,
+          isPlaced: isPlaced
         });
       }
     }
@@ -773,7 +774,6 @@ const CustomUserPuzzle = () => {
           )}
         </div>
       </div>
-      
       {showShareModal && <ShareModal />}
     </div>
   );

@@ -99,7 +99,7 @@ const Home = ({ user }) => {
     switch(type) {
       case 'custom':
         navigate(`/puzzle/custom`);
-        window.reload();
+        // window.reload();
         break;
       case 'cultural':
         navigate('/puzzle/cultural');

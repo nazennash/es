@@ -19,8 +19,6 @@ const userData = JSON.parse(localStorage.getItem('authUser'));
     name: userName || `Player ${Math.floor(Math.random() * 1000)}` 
   };
 
-const storage = getStorage();
-
 // Create a helper for 3D transformations
 const createBasRelief = (imageData, depth = 2) => {
   const canvas = document.createElement('canvas');
@@ -72,194 +70,6 @@ const Custom3DPuzzle = () => {
     startTime: null,
     isCompleted: false
   });
-
-  const database = getDatabase();
-  const gameRef = useRef(dbRef(database, `games/${gameState.gameId}`));
-
-  const [isGameStarted, setIsGameStarted] = useState(false);
-
-  // Add these near the beginning of the component, with other state definitions:
-
-const [ui, setUi] = useState({
-  loading: true,
-  error: null,
-  imageUploading: false
-});
-
-const navigate = useNavigate();
-
-// Fetch initial game data
-useEffect(() => {
-  const fetchGameData = async () => {
-    try {
-      const snapshot = await get(gameRef.current);
-      if (snapshot.exists()) {
-        setGameState(snapshot.val());
-      } else {
-        await set(gameRef.current, gameState);
-      }
-    } catch (err) {
-      console.error('Failed to fetch game data:', err);
-      setUi(prev => ({
-        ...prev,
-        error: { type: 'error', message: 'Failed to fetch game data' }
-      }));
-    }
-  };
-
-  fetchGameData();
-
-  // Listen for real-time updates
-  const handleValueChange = (snapshot) => {
-    if (snapshot.exists()) {
-      setGameState(snapshot.val());
-    }
-  };
-
-  onValue(gameRef.current, handleValueChange);
-
-  // Cleanup listener on unmount
-  return () => {
-    off(gameRef.current, 'value', handleValueChange);
-  };
-}, []);
-
-// Add the difficulty change handler
-const handleDifficultyChange = async (event) => {
-  const newDifficulty = parseInt(event.target.value, 10);
-  try {
-    await update(gameRef.current, { difficulty: newDifficulty });
-    setGameState(prev => ({ ...prev, difficulty: newDifficulty }));
-    
-    if (!isGameStarted) {
-      // Clear existing 3D pieces
-      scene3D.pieces.forEach(piece => {
-        sceneRef.current.remove(piece);
-      });
-      setScene3D(prev => ({ ...prev, pieces: [] }));
-    }
-  } catch (err) {
-    console.error('Failed to update difficulty:', err);
-    setUi(prev => ({
-      ...prev,
-      error: { type: 'error', message: 'Failed to update difficulty' }
-    }));
-  }
-};
-
-// Add the handle puzzle complete function
-const handlePuzzleComplete = async () => {
-  if (!isGameStarted || gameState.isCompleted) return;
-
-  try {
-    const finalTime = Math.floor((Date.now() - gameState.startTime) / 1000);
-
-    const updates = {
-      isCompleted: true,
-      isGameStarted: false,
-      completionTime: finalTime,
-      finalTimer: finalTime
-    };
-
-    await update(gameRef.current, updates);
-    
-    setGameState(prev => ({
-      ...prev,
-      ...updates,
-      timer: finalTime
-    }));
-    
-    setIsGameStarted(false);
-
-    await handlePuzzleCompletion({
-      puzzleId: gameState.gameId,
-      startTime: gameState.startTime,
-      timer: finalTime,
-      difficulty: gameState.difficulty,
-      imageUrl: gameState.imageUrl,
-      userId: userId, 
-      playerName: userName,
-    });
-
-    setUi(prev => ({
-      ...prev,
-      error: { 
-        type: 'success', 
-        message: `Puzzle completed! Time: ${Math.floor(finalTime / 60)}:${String(finalTime % 60).padStart(2, '0')}` 
-      }
-    }));
-
-    setShowShareModal(true);
-
-  } catch (err) {
-    console.error('Failed to handle puzzle completion:', err);
-    setUi(prev => ({
-      ...prev,
-      error: { type: 'error', message: 'Failed to record puzzle completion' }
-    }));
-  }
-};
-
-  // Add image upload handler
-  const handleImageUpload = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setUi(prev => ({ ...prev, loading: true, error: null, imageUploading: true }));
-      
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('Image must be smaller than 5MB');
-      }
-      
-      if (!file.type.startsWith('image/')) {
-        throw new Error('File must be an image');
-      }
-
-      const imageRef = storageRef(storage, `puzzle-images/${gameState.gameId}/${file.name}`);
-      const snapshot = await uploadBytes(imageRef, file);
-      const url = await getDownloadURL(snapshot.ref);
-      
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = async () => {
-          try {
-            await update(gameRef.current, {
-              imageUrl: url,
-              imageSize: {
-                width: img.width,
-                height: img.height
-              }
-            });
-            
-            setGameState(prev => ({
-              ...prev,
-              imageUrl: url,
-              imageSize: { width: img.width, height: img.height }
-            }));
-            
-            setUi(prev => ({ ...prev, loading: false, imageUploading: false }));
-            resolve();
-          } catch (err) {
-            reject(new Error('Failed to update game with image information'));
-          }
-        };
-        
-        img.onerror = () => reject(new Error('Failed to load image'));
-        img.src = url;
-      });
-    } catch (err) {
-      console.error('Image upload error:', err);
-      setUi(prev => ({
-        ...prev,
-        error: { type: 'error', message: err.message || 'Failed to upload image' },
-        loading: false,
-        imageUploading: false
-      }));
-    }
-  };
-  
-  const [showShareModal, setShowShareModal] = useState(false);
 
   // New 3D-specific state
   const [scene3D, setScene3D] = useState({
@@ -549,31 +359,6 @@ const handlePuzzleComplete = async () => {
     scene3D.camera.position.z = THREE.MathUtils.clamp(newZ, 10, 50);
   }, [scene3D]);
 
-  const handleRotate = useCallback((direction) => {
-    if (!scene3D.selectedPiece) return;
-
-    const angle = direction === 'cw' ? Math.PI / 2 : -Math.PI / 2;
-    scene3D.selectedPiece.rotation.z += angle;
-  }, [scene3D]);
-
-  // Add share functionality
-  const handleShare = useCallback(async () => {
-    try {
-      const canvas = await html2canvas(mountRef.current);
-      const dataUrl = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.href = dataUrl;
-      link.download = 'puzzle.png';
-      link.click();
-    } catch (err) {
-      console.error('Failed to share puzzle:', err);
-      setUi(prev => ({
-        ...prev,
-        error: { type: 'error', message: 'Failed to share puzzle' }
-      }));
-    }
-  }, []);
-
   // Component rendering
   return (
     <div className="flex flex-col gap-4 p-4 bg-white rounded-lg shadow-lg max-w-6xl mx-auto">
@@ -646,20 +431,6 @@ const handlePuzzleComplete = async () => {
         >
           <Camera className="h-4 w-4" />
         </button>
-        <button
-          onClick={() => handleRotate('cw')}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Rotate Clockwise"
-        >
-          <RotateCw className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => handleRotate('ccw')}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Rotate Counterclockwise"
-        >
-          <RotateCcw className="h-4 w-4" />
-        </button>
         {!isGameStarted && (
           <button
             onClick={initializePuzzle}
@@ -670,20 +441,6 @@ const handlePuzzleComplete = async () => {
             <Play className="h-4 w-4" />
           </button>
         )}
-        <button
-          onClick={handleShare}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Share Puzzle"
-        >
-          <Share2 className="h-4 w-4" />
-        </button>
-        <button
-          onClick={handleShare}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Download Puzzle"
-        >
-          <Download className="h-4 w-4" />
-        </button>
       </div>
 
       {/* 3D Puzzle Container */}

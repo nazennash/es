@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@babylonjs/core": "^7.43.0",
+    "@firebasegen/default-connector": "file:dataconnect-generated/js/default-connector",
     "babylonjs": "^7.43.0",
     "babylonjs-loaders": "^7.43.0",
     "firebase": "^11.1.0",
