@@ -1,7 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
-import * as THREE from 'three';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getDatabase, ref as dbRef, set, update, get, onValue, off } from 'firebase/database';
 import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Play, Home, LogOut, Share2, Download } from 'lucide-react';
@@ -11,96 +8,6 @@ import { Bar } from 'react-chartjs-2';
 import 'chart.js/auto';
 import html2canvas from 'html2canvas';
 
-// 3D Puzzle Piece component
-const PuzzlePiece = ({ piece, texture, onClick, isSelected, isPlaced }) => {
-  const meshRef = useRef();
-  const geometry = new THREE.BoxGeometry(1, 1, 0.1);
-  
-  const calculateUV = () => {
-    const uvs = geometry.attributes.uv.array;
-    const pieceWidth = 1 / piece.gridSize;
-    const u = piece.correct.y * pieceWidth;
-    const v = piece.correct.x * pieceWidth;
-    
-    for (let i = 0; i < uvs.length; i += 2) {
-      uvs[i] = u + (uvs[i] * pieceWidth);
-      uvs[i + 1] = v + (uvs[i + 1] * pieceWidth);
-    }
-    geometry.attributes.uv.needsUpdate = true;
-  };
-
-  useEffect(() => {
-    calculateUV();
-  }, [piece]);
-
-  const material = new THREE.MeshStandardMaterial({
-    map: texture,
-    metalness: 0.1,
-    roughness: 0.8,
-  });
-
-  return (
-    <mesh
-      ref={meshRef}
-      geometry={geometry}
-      material={material}
-      position={[piece.current.x, piece.current.y, 0]}
-      rotation={[0, 0, piece.rotation * Math.PI / 180]}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick(piece);
-      }}
-    >
-      {isSelected && (
-        <lineSegments>
-          <edgesGeometry attach="geometry" args={[geometry]} />
-          <lineBasicMaterial attach="material" color="blue" linewidth={2} />
-        </lineSegments>
-      )}
-      {isPlaced && (
-        <lineSegments>
-          <edgesGeometry attach="geometry" args={[geometry]} />
-          <lineBasicMaterial attach="material" color="green" linewidth={2} />
-        </lineSegments>
-      )}
-    </mesh>
-  );
-};
-
-// 3D Puzzle Board component
-const PuzzleBoard = ({ pieces, gameState, onPieceClick, selectedPiece }) => {
-  const [texture, setTexture] = useState(null);
-
-  useEffect(() => {
-    if (gameState.imageUrl) {
-      new THREE.TextureLoader().load(gameState.imageUrl, (loadedTexture) => {
-        setTexture(loadedTexture);
-      });
-    }
-  }, [gameState.imageUrl]);
-
-  if (!texture) return null;
-
-  return (
-    <>
-      <ambientLight intensity={0.5} />
-      <pointLight position={[10, 10, 10]} />
-      <group>
-        {pieces.map((piece) => (
-          <PuzzlePiece
-            key={piece.id}
-            piece={{ ...piece, gridSize: gameState.difficulty }}
-            texture={texture}
-            onClick={onPieceClick}
-            isSelected={selectedPiece?.id === piece.id}
-            isPlaced={piece.isPlaced}
-          />
-        ))}
-      </group>
-      <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} />
-    </>
-  );
-};
 
 const CustomUserPuzzle = () => {
   const [gameState, setGameState] = useState({
@@ -479,15 +386,15 @@ const CustomUserPuzzle = () => {
     for (let i = 0; i < gameState.difficulty; i++) {
       for (let j = 0; j < gameState.difficulty; j++) {
         const pos = positions[posIndex++];
-        const currentX = Math.floor(pos / gameState.difficulty) - gameState.difficulty / 2;
-        const currentY = (pos % gameState.difficulty) - gameState.difficulty / 2;
+        const currentX = Math.floor(pos / gameState.difficulty);
+        const currentY = pos % gameState.difficulty;
         const isPlaced = currentX === i && currentY === j;
         
         newPieces.push({
           id: `piece-${i}-${j}`,
-          correct: { x: i - gameState.difficulty / 2, y: j - gameState.difficulty / 2, z: 0 },
-          current: { x: currentX, y: currentY, z: 0 },
-          rotation: Math.floor(Math.random() * 4) * 90,
+          correct: { x: i, y: j },
+          current: { x: currentX, y: currentY },
+          rotation: 0,
           isPlaced: isPlaced
         });
       }
@@ -649,37 +556,6 @@ const CustomUserPuzzle = () => {
     );
   }
 
-  const puzzleContainerContent = gameState.imageUrl ? (
-    <div style={{ height: '600px' }}>
-      <Canvas>
-        <Suspense fallback={null}>
-          <PerspectiveCamera makeDefault position={[0, 0, 5]} />
-          <PuzzleBoard
-            pieces={pieces}
-            gameState={gameState}
-            onPieceClick={(piece) => setUi(prev => ({
-              ...prev,
-              selectedPiece: prev.selectedPiece?.id === piece.id ? null : piece
-            }))}
-            selectedPiece={ui.selectedPiece}
-          />
-        </Suspense>
-      </Canvas>
-    </div>
-  ) : (
-    <div className="w-full p-8 border-2 border-dashed rounded-lg text-center">
-      <input
-        type="file"
-        accept="image/*"
-        onChange={handleImageUpload}
-        className="w-full"
-      />
-      <p className="mt-2 text-sm text-gray-500">
-        {ui.imageUploading ? 'Uploading image...' : 'Upload an image to start the game'}
-      </p>
-    </div>
-  );
-
   return (
     <div className="flex flex-col gap-4 p-4 bg-white rounded-lg shadow-lg max-w-6xl mx-auto">
       <div className="flex items-center justify-between border-b pb-4">
@@ -797,8 +673,105 @@ const CustomUserPuzzle = () => {
       )}
       
       <div ref={puzzleContainerRef} className="flex gap-4">
+      {/* <div className="flex gap-4"> */}
         <div className="flex-1">
-          {puzzleContainerContent}
+          {!gameState.imageUrl ? (
+            <div className="w-full p-8 border-2 border-dashed rounded-lg text-center">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="w-full"
+              />
+              <p className="mt-2 text-sm text-gray-500">
+                {ui.imageUploading ? 'Uploading image...' : 'Upload an image to start the game'}
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="flex justify-end mb-4">
+                <img src={gameState.imageUrl} alt="Expected output" className="w-1/6 h-1/6 object-cover rounded border" />
+              </div>
+              <div 
+                className="grid gap-1 transition-transform duration-200"
+                style={{
+                  gridTemplateColumns: `repeat(${gameState.difficulty}, 1fr)`,
+                  transform: `scale(${ui.zoom})`,
+                  transformOrigin: 'top left'
+                }}
+                ref={(el) => {
+                  if (el && (ui.gridDimensions.width !== el.offsetWidth || ui.gridDimensions.height !== el.offsetHeight)) {
+                    setUi(prev => ({ ...prev, gridDimensions: { width: el.offsetWidth, height: el.offsetHeight } }));
+                  }
+                }}
+              >
+                {Array.from({ length: gameState.difficulty * gameState.difficulty }).map((_, index) => {
+                  const x = Math.floor(index / gameState.difficulty);
+                  const y = index % gameState.difficulty;
+                  
+                  return (
+                    <div
+                      key={`cell-${x}-${y}`}
+                      className="aspect-square bg-gray-100 rounded-lg relative"
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => handleDrop(x, y)}
+                      ref={(el) => {
+                        if (el && (ui.cellDimensions.width !== el.offsetWidth || ui.cellDimensions.height !== el.offsetHeight)) {
+                          setUi(prev => ({
+                            ...prev,
+                            cellDimensions: { width: el.offsetWidth, height: el.offsetHeight }
+                          }));
+                        }
+                      }}
+                    >
+                      {pieces.map(piece => {
+                        if (piece.current.x === x && piece.current.y === y) {
+                          const gridWidth = ui.gridDimensions?.width || 0;
+                          const gridHeight = ui.gridDimensions?.height || 0;
+                          const cellWidth = ui.cellDimensions?.width || 0;
+                          const cellHeight = ui.cellDimensions?.height || 0;
+                          const backgroundSize = `${gridWidth}px ${gridHeight}px`;
+                          const backgroundPosition = `${-piece.correct.y * cellWidth}px ${-piece.correct.x * cellHeight}px`;
+
+                          return (
+                            <div
+                              key={piece.id}
+                              draggable
+                              className={`absolute inset-0 rounded-lg cursor-move bg-cover
+                                ${piece.isPlaced ? 'ring-2 ring-green-500' : ''}
+                                ${ui.selectedPiece?.id === piece.id ? 'ring-2 ring-blue-500' : ''}`}
+                              style={{
+                                backgroundImage: `url(${gameState.imageUrl})`,
+                                backgroundSize,
+                                backgroundPosition,
+                                transform: `rotate(${piece.rotation}deg)`
+                              }}
+                              onDragStart={() => setUi(prev => ({ ...prev, draggedPiece: piece }))}
+                              onClick={() => setUi(prev => ({
+                                ...prev,
+                                selectedPiece: prev.selectedPiece?.id === piece.id ? null : piece
+                              }))}
+                            />
+                          );
+                        }
+                        return null;
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex gap-4 text-sm mt-4">
+                <div>Total Pieces: {pieces.length}</div>
+                <div>Correctly Placed: {pieces.filter(p => p.isPlaced).length}</div>
+                <div>Remaining: {pieces.length - pieces.filter(p => p.isPlaced).length}</div>
+                <div>Completion: {completionPercentage.toFixed(2)}%</div>
+              </div>
+              <div className="mt-4">
+                <Bar data={data} options={{ scales: { y: { beginAtZero: true, max: 100 } } }} />
+              </div>
+            </>
+          )}
         </div>
       </div>
       {showShareModal && <ShareModal />}
