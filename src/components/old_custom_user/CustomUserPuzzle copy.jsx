@@ -1,15 +1,68 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getDatabase, ref as dbRef, set, update, get, onValue, off } from 'firebase/database';
-import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Play, Home, LogOut, Share2, Download } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Play, Home, LogOut, Share2, Download, Camera } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { handlePuzzleCompletion } from './PuzzleCompletionHandler';
+import { handlePuzzleCompletion } from '../PuzzleCompletionHandler';
 import { Bar } from 'react-chartjs-2';
 import 'chart.js/auto';
 import html2canvas from 'html2canvas';
 
+const userData = JSON.parse(localStorage.getItem('authUser'));
+  const userId = userData.uid;
+  const userName = userData.displayName || userData.email;
 
-const CustomUserPuzzle = () => {
+  const user = { 
+    id: userId || `user-${Date.now()}`, 
+    name: userName || `Player ${Math.floor(Math.random() * 1000)}` 
+  };
+
+const storage = getStorage();
+
+// Create a helper for 3D transformations
+const createBasRelief = (imageData, depth = 2) => {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = imageData.width;
+  canvas.height = imageData.height;
+  ctx.putImageData(imageData, 0, 0);
+  
+  const geometry = new THREE.PlaneGeometry(10, 10, 32, 32);
+  const texture = new THREE.CanvasTexture(canvas);
+  
+  // Create displacement map from grayscale values
+  const displacementMap = new THREE.TextureLoader().load(canvas.toDataURL());
+  
+  const material = new THREE.MeshPhongMaterial({
+    map: texture,
+    displacementMap: displacementMap,
+    displacementScale: depth,
+    displacementBias: -0.5,
+    side: THREE.DoubleSide
+  });
+  
+  return { geometry, material };
+};
+
+// Create a piece class to handle 3D puzzle pieces
+class PuzzlePiece extends THREE.Mesh {
+  constructor(geometry, material, row, col, totalRows, totalCols) {
+    super(geometry, material);
+    this.row = row;
+    this.col = col;
+    this.correctPosition = new THREE.Vector3(
+      (col - totalCols/2) * 10.5,
+      (totalRows/2 - row) * 10.5,
+      0
+    );
+    this.isPlaced = false;
+  }
+}
+
+const Custom3DPuzzle = () => {
+  // State management
   const [gameState, setGameState] = useState({
     gameId: `game-${Date.now()}`,
     imageUrl: '',
@@ -20,297 +73,253 @@ const CustomUserPuzzle = () => {
     isCompleted: false
   });
 
-  // new state for sharing modal
-  const [showShareModal, setShowShareModal] = useState(false);
-  const puzzleContainerRef = useRef(null);
-
-  // Function to capture puzzle as image
-  const capturePuzzleImage = async () => {
-    if (!puzzleContainerRef.current) return null;
-    try {
-      const canvas = await html2canvas(puzzleContainerRef.current);
-      return canvas.toDataURL('image/png');
-    } catch (err) {
-      console.error('Failed to capture puzzle image:', err);
-      setUi(prev => ({
-        ...prev,
-        error: { type: 'error', message: 'Failed to capture puzzle image' }
-      }));
-      return null;
-    }
-  };
-
-  // Function to download puzzle image
-  const downloadPuzzleImage = async () => {
-    const imageData = await capturePuzzleImage();
-    if (!imageData) return;
-
-    const link = document.createElement('a');
-    link.href = imageData;
-    link.download = `puzzle-${gameState.gameId}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-
-  // Social sharing functions
-  const shareToFacebook = () => {
-    const url = encodeURIComponent(window.location.href);
-    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself!`);
-    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, '_blank');
-  };
-
-  const shareToTwitter = () => {
-    const url = encodeURIComponent(window.location.href);
-    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself! #PuzzleGame`);
-    window.open(`https://twitter.com/intent/tweet?url=${url}&text=${text}`, '_blank');
-  };
-
-  const shareToWhatsApp = () => {
-    const url = encodeURIComponent(window.location.href);
-    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself!`);
-    window.open(`https://wa.me/?text=${text}%20${url}`, '_blank');
-  };
-
-
-  // Share Modal Component
-  const ShareModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
-        <h3 className="text-xl font-bold mb-4">Share Your Achievement</h3>
-        <div className="space-y-4">
-          <button
-            onClick={shareToFacebook}
-            className="w-full p-3 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Share on Facebook
-          </button>
-          <button
-            onClick={shareToTwitter}
-            className="w-full p-3 bg-sky-400 text-white rounded hover:bg-sky-500"
-          >
-            Share on Twitter
-          </button>
-          <button
-            onClick={shareToWhatsApp}
-            className="w-full p-3 bg-green-500 text-white rounded hover:bg-green-600"
-          >
-            Share on WhatsApp
-          </button>
-          <button
-            onClick={downloadPuzzleImage}
-            className="w-full p-3 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 flex items-center justify-center gap-2"
-          >
-            <Download className="h-4 w-4" /> Download Image
-          </button>
-        </div>
-        <button
-          onClick={() => setShowShareModal(false)}
-          className="mt-4 w-full p-2 border border-gray-300 rounded hover:bg-gray-50"
-        >
-          Close
-        </button>
-      </div>
-    </div>
-  );
-
-
-
-  const [pieces, setPieces] = useState([]);
-  const [isGameStarted, setIsGameStarted] = useState(false);
-  const [ui, setUi] = useState({
-    zoom: 1,
-    selectedPiece: null,
-    draggedPiece: null,
-    error: null,
-    loading: true,
-    gridDimensions: { width: 0, height: 0 },
-    cellDimensions: { width: 0, height: 0 },
-    imageUploading: false
-  });
-
-  const storage = getStorage();
   const database = getDatabase();
-  const navigate = useNavigate();
   const gameRef = useRef(dbRef(database, `games/${gameState.gameId}`));
-  const timerRef = useRef(null);
 
-  const userData = JSON.parse(localStorage.getItem('authUser'));
-  const userId = userData.uid;
-  const userName = userData.displayName || userData.email;
+  const [isGameStarted, setIsGameStarted] = useState(false);
 
-  const user = { 
-    id: userId || `user-${Date.now()}`, 
-    name: userName || `Player ${Math.floor(Math.random() * 1000)}` 
+  // Add these near the beginning of the component, with other state definitions:
+
+const [ui, setUi] = useState({
+  loading: true,
+  error: null,
+  imageUploading: false
+});
+
+const navigate = useNavigate();
+
+// Add relief depth state
+const [reliefDepth, setReliefDepth] = useState(2);
+
+// Add state for undo/redo functionality
+const [history, setHistory] = useState([]);
+const [redoStack, setRedoStack] = useState([]);
+
+// Add state for hint system
+const [showHint, setShowHint] = useState(false);
+
+// Add state for piece grouping
+const [selectedPieces, setSelectedPieces] = useState([]);
+
+// Add state for view presets
+const [viewPreset, setViewPreset] = useState('default');
+
+// Add state for progress tracking
+const [progress, setProgress] = useState(0);
+
+// Add state for showing expected result image
+const [showExpectedResult, setShowExpectedResult] = useState(false);
+
+// Add state for timer
+const [timer, setTimer] = useState(0);
+
+// Save game progress
+const saveGameProgress = async () => {
+  try {
+    const progress = {
+      gameState,
+      scene3D: {
+        pieces: scene3D.pieces.map(piece => ({
+          position: piece.position,
+          rotation: piece.rotation,
+          isPlaced: piece.isPlaced
+        }))
+      }
+    };
+    await set(gameRef.current, progress);
+    setUi(prev => ({ ...prev, error: { type: 'success', message: 'Game progress saved' } }));
+  } catch (err) {
+    console.error('Failed to save game progress:', err);
+    setUi(prev => ({ ...prev, error: { type: 'error', message: 'Failed to save game progress' } }));
+  }
+};
+
+// Resume game progress
+const resumeGameProgress = async () => {
+  try {
+    const snapshot = await get(gameRef.current);
+    if (snapshot.exists()) {
+      const progress = snapshot.val();
+      setGameState(progress.gameState);
+      setScene3D(prev => ({
+        ...prev,
+        pieces: progress.scene3D.pieces.map(pieceData => {
+          const piece = new PuzzlePiece(
+            new THREE.PlaneGeometry(10, 10, 32, 32),
+            new THREE.MeshPhongMaterial(),
+            0, 0, 0, 0
+          );
+          piece.position.copy(pieceData.position);
+          piece.rotation.copy(pieceData.rotation);
+          piece.isPlaced = pieceData.isPlaced;
+          return piece;
+        })
+      }));
+      setUi(prev => ({ ...prev, error: { type: 'success', message: 'Game progress resumed' } }));
+    }
+  } catch (err) {
+    console.error('Failed to resume game progress:', err);
+    setUi(prev => ({ ...prev, error: { type: 'error', message: 'Failed to resume game progress' } }));
+  }
+};
+
+// Handle undo
+const handleUndo = () => {
+  if (history.length === 0) return;
+  const lastState = history.pop();
+  setRedoStack([...redoStack, { gameState, scene3D }]);
+  setGameState(lastState.gameState);
+  setScene3D(lastState.scene3D);
+};
+
+// Handle redo
+const handleRedo = () => {
+  if (redoStack.length === 0) return;
+  const nextState = redoStack.pop();
+  setHistory([...history, { gameState, scene3D }]);
+  setGameState(nextState.gameState);
+  setScene3D(nextState.scene3D);
+};
+
+// Handle hint
+const handleHint = () => {
+  setShowHint(true);
+  setTimeout(() => setShowHint(false), 3000);
+};
+
+// Handle piece grouping
+const handlePieceGrouping = () => {
+  // Implement piece grouping logic
+};
+
+// Handle view preset change
+const handleViewPresetChange = (preset) => {
+  setViewPreset(preset);
+  if (preset === 'top') {
+    scene3D.camera.position.set(0, 50, 0);
+    scene3D.camera.lookAt(0, 0, 0);
+  } else if (preset === 'side') {
+    scene3D.camera.position.set(50, 0, 0);
+    scene3D.camera.lookAt(0, 0, 0);
+  } else {
+    scene3D.camera.position.set(0, 0, 30);
+    scene3D.camera.lookAt(0, 0, 0);
+  }
+};
+
+// Fetch initial game data
+useEffect(() => {
+  const fetchGameData = async () => {
+    try {
+      const snapshot = await get(gameRef.current);
+      if (snapshot.exists()) {
+        setGameState(snapshot.val());
+      } else {
+        await set(gameRef.current, gameState);
+      }
+    } catch (err) {
+      console.error('Failed to fetch game data:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to fetch game data' }
+      }));
+    }
   };
 
-  // console.log(user);
+  fetchGameData();
 
-  // Initialize game and set up Firebase listeners
-  useEffect(() => {
-    const initializeGame = async () => {
-      try {
-        setUi(prev => ({ ...prev, loading: true }));
-        
-        const snapshot = await get(gameRef.current);
-        if (!snapshot.exists()) {
-          await set(gameRef.current, {
-            imageUrl: '',
-            isGameStarted: false,
-            timer: 0,
-            difficulty: gameState.difficulty,
-            startTime: null,
-            isCompleted: false
-          });
-        } else {
-          const data = snapshot.val();
-          setGameState(prev => ({ ...prev, ...data }));
-          if (data.pieces) setPieces(data.pieces);
-          if (data.isGameStarted) setIsGameStarted(true);
-        }
-
-        // Set up real-time listener
-        const unsubscribe = onValue(gameRef.current, (snapshot) => {
-          const data = snapshot.val();
-          if (data) {
-            setGameState(prev => ({ ...prev, ...data }));
-            if (data.pieces) setPieces(data.pieces);
-            if (data.isGameStarted !== isGameStarted) {
-              setIsGameStarted(data.isGameStarted);
-            }
-          }
-        });
-
-        // Calculate final time correctly
-        if (gameState.startTime) {
-          const finalTime = Math.floor((Date.now() - gameState.startTime) / 1000);
-          console.log(finalTime);
-        }
-
-        setUi(prev => ({ ...prev, loading: false }));
-        
-        return () => {
-          off(gameRef.current);
-          if (timerRef.current) clearInterval(timerRef.current);
-        };
-      } catch (err) {
-        console.error('Failed to initialize game:', err);
-        setUi(prev => ({
-          ...prev,
-          loading: false,
-          error: { type: 'error', message: 'Failed to initialize game' }
-        }));
-      }
-    };
-
-    initializeGame();
-  }, [gameState.gameId]);
-
-  // Timer management
-  useEffect(() => {
-    let timerInterval;
-
-    const updateTimer = async () => {
-      if (!gameState.startTime || !isGameStarted || gameState.isCompleted) return;
-      
-      const newTimer = Math.floor((Date.now() - gameState.startTime) / 1000);
-      
-      try {
-        await update(gameRef.current, { timer: newTimer });
-        setGameState(prev => ({ ...prev, timer: newTimer }));
-      } catch (err) {
-        console.error('Failed to update timer:', err);
-      }
-    };
-
-    if (isGameStarted && gameState.startTime && !gameState.isCompleted) {
-      timerInterval = setInterval(updateTimer, 1000);
+  // Listen for real-time updates
+  const handleValueChange = (snapshot) => {
+    if (snapshot.exists()) {
+      setGameState(snapshot.val());
     }
+  };
 
-    return () => {
-      if (timerInterval) {
-        clearInterval(timerInterval);
-      }
-    };
-  }, [isGameStarted, gameState.startTime, gameState.isCompleted]);
+  onValue(gameRef.current, handleValueChange);
 
-  const handlePuzzleComplete = useCallback(async () => {
-    if (!isGameStarted || gameState.isCompleted) return;
+  // Cleanup listener on unmount
+  return () => {
+    off(gameRef.current, 'value', handleValueChange);
+  };
+}, []);
 
-    try {
-      const finalTime = Math.floor((Date.now() - gameState.startTime) / 1000);
-
-      console.log("Final Time", finalTime)
-
-      const updates = {
-        isCompleted: true,
-        isGameStarted: false,
-        completionTime: finalTime,
-        finalTimer: finalTime
-      };
-
-      await update(gameRef.current, updates);
-      
-      setGameState(prev => ({
-        ...prev,
-        ...updates,
-        timer: finalTime
-      }));
-      
-      setIsGameStarted(false);
-
-      await handlePuzzleCompletion({
-        puzzleId: gameState.gameId,
-        startTime: gameState.startTime,
-        timer: finalTime,
-        difficulty: gameState.difficulty,
-        imageUrl: gameState.imageUrl,
-        userId: userId, 
-        playerName: userName,
+// Add the difficulty change handler
+const handleDifficultyChange = async (event) => {
+  const newDifficulty = parseInt(event.target.value, 10);
+  try {
+    await update(gameRef.current, { difficulty: newDifficulty });
+    setGameState(prev => ({ ...prev, difficulty: newDifficulty }));
+    
+    if (!isGameStarted) {
+      // Clear existing 3D pieces
+      scene3D.pieces.forEach(piece => {
+        sceneRef.current.remove(piece);
       });
-
-      setUi(prev => ({
-        ...prev,
-        error: { 
-          type: 'success', 
-          message: `Puzzle completed! Time: ${Math.floor(finalTime / 60)}:${String(finalTime % 60).padStart(2, '0')}` 
-        }
-      }));
-
-      // Show share modal on completion
-      setShowShareModal(true);
-
-    } catch (err) {
-      console.error('Failed to handle puzzle completion:', err);
-      setUi(prev => ({
-        ...prev,
-        error: { type: 'error', message: 'Failed to record puzzle completion' }
-      }));
+      setScene3D(prev => ({ ...prev, pieces: [] }));
     }
-  }, [isGameStarted, gameState.isCompleted, gameState.startTime, gameState.gameId, gameState.difficulty, gameState.imageUrl, userId, userName]);
-  
+  } catch (err) {
+    console.error('Failed to update difficulty:', err);
+    setUi(prev => ({
+      ...prev,
+      error: { type: 'error', message: 'Failed to update difficulty' }
+    }));
+  }
+};
 
-  // Puzzle completion check
-  useEffect(() => {
-    const checkCompletion = () => {
-      if (!isGameStarted || gameState.isCompleted || pieces.length === 0) return;
+// Add the handle puzzle complete function
+const handlePuzzleComplete = async () => {
+  if (!isGameStarted || gameState.isCompleted) return;
 
-      const isComplete = pieces.every(piece => 
-        piece.isPlaced && 
-        piece.current.x === piece.correct.x && 
-        piece.current.y === piece.correct.y && 
-        piece.rotation % 360 === 0
-      );
+  try {
+    const finalTime = Math.floor((Date.now() - gameState.startTime) / 1000);
 
-      if (isComplete) {
-        handlePuzzleComplete();
-      }
+    const updates = {
+      isCompleted: true,
+      isGameStarted: false,
+      completionTime: finalTime,
+      finalTimer: finalTime
     };
 
-    checkCompletion();
-  }, [pieces, isGameStarted, gameState.isCompleted, handlePuzzleComplete]);
+    await update(gameRef.current, updates);
+    
+    setGameState(prev => ({
+      ...prev,
+      ...updates,
+      timer: finalTime
+    }));
+    
+    setIsGameStarted(false);
 
+    await handlePuzzleCompletion({
+      puzzleId: gameState.gameId,
+      startTime: gameState.startTime,
+      timer: finalTime,
+      difficulty: gameState.difficulty,
+      imageUrl: gameState.imageUrl,
+      userId: userId, 
+      playerName: userName,
+    });
+
+    setUi(prev => ({
+      ...prev,
+      error: { 
+        type: 'success', 
+        message: `Puzzle completed! Time: ${Math.floor(finalTime / 60)}:${String(finalTime % 60).padStart(2, '0')}` 
+      }
+    }));
+
+    setShowShareModal(true);
+
+  } catch (err) {
+    console.error('Failed to handle puzzle completion:', err);
+    setUi(prev => ({
+      ...prev,
+      error: { type: 'error', message: 'Failed to record puzzle completion' }
+    }));
+  }
+};
+
+  // Add image upload handler
   const handleImageUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -368,41 +377,280 @@ const CustomUserPuzzle = () => {
       }));
     }
   };
+  
+  const [showShareModal, setShowShareModal] = useState(false);
 
-  const generatePuzzlePieces = () => {
-    const positions = Array.from(
-      { length: gameState.difficulty * gameState.difficulty },
-      (_, i) => i
+  // New 3D-specific state
+  const [scene3D, setScene3D] = useState({
+    pieces: [],
+    selectedPiece: null,
+    camera: null,
+    controls: null,
+    isDragging: false,
+    mouse: new THREE.Vector2(),
+    raycaster: new THREE.Raycaster()
+  });
+
+  // Refs for Three.js
+  const mountRef = useRef(null);
+  const rendererRef = useRef(null);
+  const sceneRef = useRef(new THREE.Scene());
+  const frameIdRef = useRef(null);
+
+  // Initialize 3D scene
+  const initializeScene = useCallback(() => {
+    if (!mountRef.current) return;
+
+    // Setup renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+    renderer.shadowMap.enabled = true;
+    mountRef.current.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
+
+    // Setup camera
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      mountRef.current.clientWidth / mountRef.current.clientHeight,
+      0.1,
+      1000
     );
-    
-    for (let i = positions.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [positions[i], positions[j]] = [positions[j], positions[i]];
-    }
-    
-    const newPieces = [];
-    let posIndex = 0;
-    
-    for (let i = 0; i < gameState.difficulty; i++) {
-      for (let j = 0; j < gameState.difficulty; j++) {
-        const pos = positions[posIndex++];
-        const currentX = Math.floor(pos / gameState.difficulty);
-        const currentY = pos % gameState.difficulty;
-        const isPlaced = currentX === i && currentY === j;
-        
-        newPieces.push({
-          id: `piece-${i}-${j}`,
-          correct: { x: i, y: j },
-          current: { x: currentX, y: currentY },
-          rotation: 0,
-          isPlaced: isPlaced
-        });
+    camera.position.z = 30;
+
+    // Setup lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(0, 10, 20);
+    directionalLight.castShadow = true;
+    sceneRef.current.add(ambientLight, directionalLight);
+
+    // Setup controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxDistance = 100;
+    controls.minDistance = 10;
+
+    // Add grid lines
+    const gridHelper = new THREE.GridHelper(100, 10);
+    sceneRef.current.add(gridHelper);
+
+    // Add visible boxes for piece placement
+    const boxMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff });
+    for (let row = 0; row < gameState.difficulty; row++) {
+      for (let col = 0; col < gameState.difficulty; col++) {
+        const boxGeometry = new THREE.BoxGeometry(10, 10, 0.1);
+        const edges = new THREE.EdgesGeometry(boxGeometry);
+        const line = new THREE.LineSegments(edges, boxMaterial);
+        line.position.set(
+          (col - gameState.difficulty / 2) * 10.5,
+          (gameState.difficulty / 2 - row) * 10.5,
+          0
+        );
+        sceneRef.current.add(line);
       }
     }
+
+    setScene3D(prev => ({
+      ...prev,
+      camera,
+      controls
+    }));
+
+    // Animation loop
+    const animate = () => {
+      frameIdRef.current = requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(sceneRef.current, camera);
+    };
+    animate();
+
+    // Cleanup
+    return () => {
+      cancelAnimationFrame(frameIdRef.current);
+      renderer.dispose();
+      mountRef.current?.removeChild(renderer.domElement);
+    };
+  }, [gameState.difficulty]);
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (!mountRef.current || !rendererRef.current || !scene3D.camera) return;
+
+      const width = mountRef.current.clientWidth;
+      const height = mountRef.current.clientHeight;
+
+      scene3D.camera.aspect = width / height;
+      scene3D.camera.updateProjectionMatrix();
+      rendererRef.current.setSize(width, height);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [scene3D.camera]);
+
+  // Mouse interaction handlers
+  const handleMouseDown = useCallback((event) => {
+    if (!scene3D.camera || !rendererRef.current) return;
+
+    const rect = rendererRef.current.domElement.getBoundingClientRect();
+    scene3D.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    scene3D.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    scene3D.raycaster.setFromCamera(scene3D.mouse, scene3D.camera);
+    const intersects = scene3D.raycaster.intersectObjects(scene3D.pieces);
+
+    if (intersects.length > 0) {
+      setScene3D(prev => ({
+        ...prev,
+        selectedPiece: intersects[0].object,
+        isDragging: true
+      }));
+      
+      // Disable orbit controls while dragging
+      if (scene3D.controls) {
+        scene3D.controls.enabled = false;
+      }
+    }
+  }, [scene3D]);
+
+  // ... (previous imports and code remain the same)
+
+  // Add mouse move handler
+  const handleMouseMove = useCallback((event) => {
+    if (!scene3D.isDragging || !scene3D.selectedPiece || !scene3D.camera) return;
+
+    const rect = rendererRef.current.domElement.getBoundingClientRect();
+    scene3D.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    scene3D.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    // Project mouse position to 3D space
+    scene3D.raycaster.setFromCamera(scene3D.mouse, scene3D.camera);
+    const intersectPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    const intersection = new THREE.Vector3();
+    scene3D.raycaster.ray.intersectPlane(intersectPlane, intersection);
+
+    // Move selected piece
+    scene3D.selectedPiece.position.x = intersection.x;
+    scene3D.selectedPiece.position.y = intersection.y;
+  }, [scene3D]);
+
+  // Add mouse up handler
+  const handleMouseUp = useCallback(() => {
+    if (!scene3D.selectedPiece || !scene3D.isDragging) return;
+
+    // Check if piece is near its correct position
+    const piece = scene3D.selectedPiece;
+    const distance = piece.position.distanceTo(piece.correctPosition);
     
-    return newPieces;
+    if (distance < 1) {
+      // Snap to correct position
+      piece.position.copy(piece.correctPosition);
+      piece.isPlaced = true;
+
+      // Animate piece placement with green border
+      piece.material.color.set(0x00ff00);
+      setTimeout(() => piece.material.color.set(0xffffff), 500);
+
+      // Update progress
+      const placedPieces = scene3D.pieces.filter(p => p.isPlaced).length;
+      const totalPieces = scene3D.pieces.length;
+      setProgress((placedPieces / totalPieces) * 100);
+
+      // Check if puzzle is complete
+      const isComplete = scene3D.pieces.every(p => p.isPlaced);
+      if (isComplete) {
+        handlePuzzleComplete();
+      }
+    } else {
+      // Animate piece placement with red border
+      piece.material.color.set(0xff0000);
+      setTimeout(() => piece.material.color.set(0xffffff), 500);
+    }
+
+    // Save current state to history for undo functionality
+    setHistory(prev => [...prev, { gameState, scene3D: { ...scene3D, pieces: [...scene3D.pieces] } }]);
+    setRedoStack([]);
+
+    // Re-enable orbit controls
+    if (scene3D.controls) {
+      scene3D.controls.enabled = true;
+    }
+
+    setScene3D(prev => ({
+      ...prev,
+      selectedPiece: null,
+      isDragging: false
+    }));
+  }, [scene3D, gameState]);
+
+  // Generate 3D puzzle pieces
+  const generate3DPuzzlePieces = async (imageUrl, difficulty) => {
+    // Load image and create texture
+    const textureLoader = new THREE.TextureLoader();
+    const texture = await new Promise((resolve) => {
+      textureLoader.load(imageUrl, (tex) => {
+        resolve(tex);
+      });
+    });
+
+    // Clear existing pieces
+    scene3D.pieces.forEach(piece => {
+      sceneRef.current.remove(piece);
+    });
+
+    const newPieces = [];
+    const pieceWidth = 10;
+    const pieceHeight = 10;
+
+    // Create pieces with bas-relief effect
+    for (let row = 0; row < difficulty; row++) {
+      for (let col = 0; col < difficulty; col++) {
+        // Create geometry for piece
+        const geometry = new THREE.PlaneGeometry(pieceWidth * 0.95, pieceHeight * 0.95);
+
+        // Create material with clipped texture
+        const material = new THREE.MeshPhongMaterial({
+          map: texture,
+          side: THREE.DoubleSide,
+          displacementMap: texture,
+          displacementScale: reliefDepth,
+          displacementBias: -0.5
+        });
+
+        // Set UV mapping for the piece
+        const uvs = geometry.attributes.uv;
+        const uvArray = uvs.array;
+        for (let i = 0; i < uvArray.length; i += 2) {
+          uvArray[i] = (uvArray[i] + col) / difficulty;
+          uvArray[i + 1] = (uvArray[i + 1] + row) / difficulty;
+        }
+        uvs.needsUpdate = true;
+
+        // Create piece and add to scene
+        const piece = new PuzzlePiece(geometry, material, row, col, difficulty, difficulty);
+        
+        // Randomize initial position
+        piece.position.set(
+          (Math.random() - 0.5) * 30,
+          (Math.random() - 0.5) * 30,
+          0
+        );
+
+        // Add to scene and pieces array
+        sceneRef.current.add(piece);
+        newPieces.push(piece);
+      }
+    }
+
+    setScene3D(prev => ({
+      ...prev,
+      pieces: newPieces
+    }));
   };
 
+  // Initialize puzzle
   const initializePuzzle = async () => {
     if (!gameState.imageUrl) return;
 
@@ -410,10 +658,9 @@ const CustomUserPuzzle = () => {
       setUi(prev => ({ ...prev, loading: true, error: null }));
       
       const startTime = Date.now();
-      const newPieces = generatePuzzlePieces();
+      await generate3DPuzzlePieces(gameState.imageUrl, gameState.difficulty);
       
       const updates = {
-        pieces: newPieces,
         isGameStarted: true,
         startTime,
         timer: 0,
@@ -422,7 +669,6 @@ const CustomUserPuzzle = () => {
       
       await update(gameRef.current, updates);
       
-      setPieces(newPieces);
       setGameState(prev => ({
         ...prev,
         startTime,
@@ -431,6 +677,15 @@ const CustomUserPuzzle = () => {
       }));
       setIsGameStarted(true);
       setUi(prev => ({ ...prev, loading: false }));
+
+      initializeScene(); // Initialize the scene when the play button is pressed
+
+      // Start the timer
+      const timerInterval = setInterval(() => {
+        setTimer(prev => prev + 1);
+      }, 1000);
+
+      return () => clearInterval(timerInterval);
       
     } catch (err) {
       console.error('Failed to initialize puzzle:', err);
@@ -442,127 +697,60 @@ const CustomUserPuzzle = () => {
     }
   };
 
-  const handleDrop = async (x, y) => {
-    if (!ui.draggedPiece) return;
+
+  // ... (previous code remains the same)
+
+  // Add camera controls
+  const handleCameraReset = useCallback(() => {
+    if (!scene3D.camera || !scene3D.controls) return;
     
-    try {
-      const targetPiece = pieces.find(p => p.current.x === x && p.current.y === y);
-      
-      const updatedPieces = pieces.map(p => {
-        if (p.id === ui.draggedPiece.id) {
-          const isCorrect = x === p.correct.x && 
-                           y === p.correct.y && 
-                           p.rotation % 360 === 0;
-          return { ...p, current: { x, y }, isPlaced: isCorrect };
-        }
-        
-        if (targetPiece && p.id === targetPiece.id) {
-          return { 
-            ...p, 
-            current: { 
-              x: ui.draggedPiece.current.x, 
-              y: ui.draggedPiece.current.y 
-            }
-          };
-        }
-        
-        return p;
-      });
+    scene3D.camera.position.set(0, 0, 30);
+    scene3D.camera.lookAt(0, 0, 0);
+    scene3D.controls.reset();
+  }, [scene3D]);
 
-      await update(gameRef.current, { pieces: updatedPieces });
-      setPieces(updatedPieces);
-      setUi(prev => ({ ...prev, draggedPiece: null }));
+  const handleZoom = useCallback((direction) => {
+    if (!scene3D.camera) return;
+    
+    const zoomSpeed = 5;
+    const newZ = scene3D.camera.position.z + (direction === 'in' ? -zoomSpeed : zoomSpeed);
+    scene3D.camera.position.z = THREE.MathUtils.clamp(newZ, 10, 50);
+  }, [scene3D]);
+
+  const handleRotate = useCallback((direction) => {
+    if (!scene3D.selectedPiece) return;
+
+    const angle = direction === 'cw' ? Math.PI / 2 : -Math.PI / 2;
+    scene3D.selectedPiece.rotation.z += angle;
+  }, [scene3D]);
+
+  // Add share functionality
+  const handleShare = useCallback(async () => {
+    try {
+      const canvas = await html2canvas(mountRef.current);
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = 'puzzle.png';
+      link.click();
     } catch (err) {
-      console.error('Failed to update piece position:', err);
+      console.error('Failed to share puzzle:', err);
       setUi(prev => ({
         ...prev,
-        error: { type: 'error', message: 'Failed to move piece' },
-        draggedPiece: null
+        error: { type: 'error', message: 'Failed to share puzzle' }
       }));
     }
-  };
+  }, []);
 
-  const handleRotate = async (direction) => {
-    if (!ui.selectedPiece) return;
-
-    try {
-      const updatedPieces = pieces.map(p => {
-        if (p.id === ui.selectedPiece.id) {
-          const newRotation = p.rotation + (direction === 'left' ? -90 : 90);
-          const isCorrect = p.correct.x === p.current.x && 
-                           p.correct.y === p.current.y && 
-                           newRotation % 360 === 0;
-          
-          return { ...p, rotation: newRotation, isPlaced: isCorrect };
-        }
-        return p;
-      });
-
-      await update(gameRef.current, { pieces: updatedPieces });
-      setPieces(updatedPieces);
-    } catch (err) {
-      console.error('Failed to rotate piece:', err);
-      setUi(prev => ({
-        ...prev,
-        error: { type: 'error', message: 'Failed to rotate piece' }
-      }));
-    }
-  };
-
-  const handleDifficultyChange = async (event) => {
-    const newDifficulty = parseInt(event.target.value, 10);
-    try {
-      await update(gameRef.current, { difficulty: newDifficulty });
-      setGameState(prev => ({ ...prev, difficulty: newDifficulty }));
-      
-      if (!isGameStarted) {
-        await update(gameRef.current, { pieces: [] });
-        setPieces([]);
-      }
-    } catch (err) {
-      console.error('Failed to update difficulty:', err);
-      setUi(prev => ({
-        ...prev,
-        error: { type: 'error', message: 'Failed to update difficulty' }
-      }));
-    }
-  };
-
-  const calculateCompletionPercentage = () => {
-    const totalPieces = pieces.length;
-    const correctlyPlaced = pieces.filter(p => p.isPlaced).length;
-    return totalPieces > 0 ? (correctlyPlaced / totalPieces) * 100 : 0;
-  };
-
-  const completionPercentage = calculateCompletionPercentage();
-  const data = {
-    labels: ['Completion'],
-    datasets: [
-      {
-        label: 'Completion Percentage',
-        data: [completionPercentage],
-        backgroundColor: ['rgba(75, 192, 192, 0.6)'],
-        borderColor: ['rgba(75, 192, 192, 1)'],
-        borderWidth: 1,
-      },
-    ],
-  };
-
-  if (ui.loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-gray-900"></div>
-      </div>
-    );
-  }
-
+  // Component rendering
   return (
     <div className="flex flex-col gap-4 p-4 bg-white rounded-lg shadow-lg max-w-6xl mx-auto">
+      {/* Header */}
       <div className="flex items-center justify-between border-b pb-4">
-        <h1 className="text-2xl font-bold">Custom User Puzzle</h1>
+        <h1 className="text-2xl font-bold">3D Photo Puzzle</h1>
         <p>Welcome {user.name}</p>
         <div className="text-lg font-semibold">
-          {`Time: ${String(Math.floor(gameState.timer / 60)).padStart(2, '0')}:${String(gameState.timer % 60).padStart(2, '0')}`}
+          {`Time: ${String(Math.floor(timer / 60)).padStart(2, '0')}:${String(timer % 60).padStart(2, '0')}`}
         </div>
         <div className="flex gap-2">
           <button
@@ -582,6 +770,7 @@ const CustomUserPuzzle = () => {
         </div>
       </div>
 
+      {/* Game Controls */}
       {!isGameStarted && (
         <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
           <label htmlFor="difficulty" className="font-medium">
@@ -602,39 +791,64 @@ const CustomUserPuzzle = () => {
         </div>
       )}
 
+      {/* Relief Depth Controls */}
+      {!isGameStarted && (
+        <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+          <label htmlFor="reliefDepth" className="font-medium">
+            Relief Depth: {reliefDepth}
+          </label>
+          <input
+            type="range"
+            id="reliefDepth"
+            min="1"
+            max="10"
+            value={reliefDepth}
+            onChange={(e) => setReliefDepth(parseInt(e.target.value, 10))}
+            className="flex-1"
+          />
+          <span className="text-sm text-gray-600">
+            ({reliefDepth})
+          </span>
+        </div>
+      )}
+
+      {/* Camera Controls */}
       <div className="flex gap-2 mt-4">
         <button
-          onClick={() => setUi(prev => ({ ...prev, zoom: Math.max(prev.zoom - 0.1, 0.5) }))}
+          onClick={() => handleZoom('out')}
           className="p-2 border rounded hover:bg-gray-100"
           title="Zoom Out"
         >
           <ZoomOut className="h-4 w-4" />
         </button>
         <button
-          onClick={() => setUi(prev => ({ ...prev, zoom: Math.min(prev.zoom + 0.1, 2) }))}
+          onClick={() => handleZoom('in')}
           className="p-2 border rounded hover:bg-gray-100"
           title="Zoom In"
         >
           <ZoomIn className="h-4 w-4" />
         </button>
-        {ui.selectedPiece && (
-          <>
-            <button
-              onClick={() => handleRotate('left')}
-              className="p-2 border rounded hover:bg-gray-100"
-              title="Rotate Left"
-            >
-              <RotateCcw className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => handleRotate('right')}
-              className="p-2 border rounded hover:bg-gray-100"
-              title="Rotate Right"
-            >
-              <RotateCw className="h-4 w-4" />
-            </button>
-          </>
-        )}
+        <button
+          onClick={handleCameraReset}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Reset Camera"
+        >
+          <Camera className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => handleRotate('cw')}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Rotate Clockwise"
+        >
+          <RotateCw className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => handleRotate('ccw')}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Rotate Counterclockwise"
+        >
+          <RotateCcw className="h-4 w-4" />
+        </button>
         {!isGameStarted && (
           <button
             onClick={initializePuzzle}
@@ -645,22 +859,149 @@ const CustomUserPuzzle = () => {
             <Play className="h-4 w-4" />
           </button>
         )}
-
-        {gameState.isCompleted && (
-          <button
-            onClick={() => setShowShareModal(true)}
-            className="p-2 border rounded hover:bg-gray-100"
-            title="Share"
-          >
-            <Share2 className="h-4 w-4" />
-          </button>
-        )}
-
+        <button
+          onClick={handleShare}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Share Puzzle"
+        >
+          <Share2 className="h-4 w-4" />
+        </button>
+        <button
+          onClick={handleShare}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Download Puzzle"
+        >
+          <Download className="h-4 w-4" />
+        </button>
+        <button
+          onClick={saveGameProgress}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Save Game"
+        >
+          Save
+        </button>
+        <button
+          onClick={resumeGameProgress}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Resume Game"
+        >
+          Resume
+        </button>
+        <button
+          onClick={handleUndo}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Undo"
+        >
+          Undo
+        </button>
+        <button
+          onClick={handleRedo}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Redo"
+        >
+          Redo
+        </button>
+        <button
+          onClick={handleHint}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Hint"
+        >
+          Hint
+        </button>
+        <button
+          onClick={handlePieceGrouping}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Group Pieces"
+        >
+          Group
+        </button>
+        <select
+          value={viewPreset}
+          onChange={(e) => handleViewPresetChange(e.target.value)}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="View Preset"
+        >
+          <option value="default">Default</option>
+          <option value="top">Top View</option>
+          <option value="side">Side View</option>
+        </select>
+        <button
+          onClick={() => setShowExpectedResult(!showExpectedResult)}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Show Expected Result"
+        >
+          {showExpectedResult ? 'Hide' : 'Show'} Expected Result
+        </button>
       </div>
 
-      
+      {/* 3D Puzzle Container */}
+      <div 
+        ref={mountRef}
+        className="w-full aspect-square bg-gray-50 rounded-lg relative"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
+        {!gameState.imageUrl && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+              id="imageUpload"
+            />
+            <label 
+              htmlFor="imageUpload"
+              className="cursor-pointer p-6 border-2 border-dashed rounded-lg text-center"
+            >
+              <p className="text-lg font-medium">Upload an image to create a 3D puzzle</p>
+              <p className="text-sm text-gray-500 mt-2">Click or drag an image here</p>
+            </label>
+          </div>
+        )}
+        {showExpectedResult && gameState.imageUrl && (
+          <img 
+            src={gameState.imageUrl} 
+            alt="Expected Result" 
+            className="absolute inset-0 w-full h-full object-cover opacity-50 pointer-events-none"
+          />
+        )}
+      </div>
 
+      {/* Progress Display */}
+      {isGameStarted && (
+        <div className="mt-4">
+          <div className="flex gap-4 text-sm">
+            <div>Total Pieces: {scene3D.pieces.length}</div>
+            <div>Correctly Placed: {scene3D.pieces.filter(p => p.isPlaced).length}</div>
+            <div>Remaining: {scene3D.pieces.length - scene3D.pieces.filter(p => p.isPlaced).length}</div>
+          </div>
+          <div className="mt-2">
+            <Bar 
+              data={{
+                labels: ['Progress'],
+                datasets: [{
+                  label: 'Completion',
+                  data: [progress],
+                  backgroundColor: 'rgba(75, 192, 192, 0.6)'
+                }]
+              }}
+              options={{
+                scales: {
+                  y: {
+                    beginAtZero: true,
+                    max: 100
+                  }
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
 
+      {/* Error Messages */}
       {ui.error && (
         <div 
           className={`p-3 rounded ${
@@ -671,112 +1012,11 @@ const CustomUserPuzzle = () => {
           {ui.error.message}
         </div>
       )}
-      
-      <div ref={puzzleContainerRef} className="flex gap-4">
-      {/* <div className="flex gap-4"> */}
-        <div className="flex-1">
-          {!gameState.imageUrl ? (
-            <div className="w-full p-8 border-2 border-dashed rounded-lg text-center">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="w-full"
-              />
-              <p className="mt-2 text-sm text-gray-500">
-                {ui.imageUploading ? 'Uploading image...' : 'Upload an image to start the game'}
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="flex justify-end mb-4">
-                <img src={gameState.imageUrl} alt="Expected output" className="w-1/6 h-1/6 object-cover rounded border" />
-              </div>
-              <div 
-                className="grid gap-1 transition-transform duration-200"
-                style={{
-                  gridTemplateColumns: `repeat(${gameState.difficulty}, 1fr)`,
-                  transform: `scale(${ui.zoom})`,
-                  transformOrigin: 'top left'
-                }}
-                ref={(el) => {
-                  if (el && (ui.gridDimensions.width !== el.offsetWidth || ui.gridDimensions.height !== el.offsetHeight)) {
-                    setUi(prev => ({ ...prev, gridDimensions: { width: el.offsetWidth, height: el.offsetHeight } }));
-                  }
-                }}
-              >
-                {Array.from({ length: gameState.difficulty * gameState.difficulty }).map((_, index) => {
-                  const x = Math.floor(index / gameState.difficulty);
-                  const y = index % gameState.difficulty;
-                  
-                  return (
-                    <div
-                      key={`cell-${x}-${y}`}
-                      className="aspect-square bg-gray-100 rounded-lg relative"
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={() => handleDrop(x, y)}
-                      ref={(el) => {
-                        if (el && (ui.cellDimensions.width !== el.offsetWidth || ui.cellDimensions.height !== el.offsetHeight)) {
-                          setUi(prev => ({
-                            ...prev,
-                            cellDimensions: { width: el.offsetWidth, height: el.offsetHeight }
-                          }));
-                        }
-                      }}
-                    >
-                      {pieces.map(piece => {
-                        if (piece.current.x === x && piece.current.y === y) {
-                          const gridWidth = ui.gridDimensions?.width || 0;
-                          const gridHeight = ui.gridDimensions?.height || 0;
-                          const cellWidth = ui.cellDimensions?.width || 0;
-                          const cellHeight = ui.cellDimensions?.height || 0;
-                          const backgroundSize = `${gridWidth}px ${gridHeight}px`;
-                          const backgroundPosition = `${-piece.correct.y * cellWidth}px ${-piece.correct.x * cellHeight}px`;
 
-                          return (
-                            <div
-                              key={piece.id}
-                              draggable
-                              className={`absolute inset-0 rounded-lg cursor-move bg-cover
-                                ${piece.isPlaced ? 'ring-2 ring-green-500' : ''}
-                                ${ui.selectedPiece?.id === piece.id ? 'ring-2 ring-blue-500' : ''}`}
-                              style={{
-                                backgroundImage: `url(${gameState.imageUrl})`,
-                                backgroundSize,
-                                backgroundPosition,
-                                transform: `rotate(${piece.rotation}deg)`
-                              }}
-                              onDragStart={() => setUi(prev => ({ ...prev, draggedPiece: piece }))}
-                              onClick={() => setUi(prev => ({
-                                ...prev,
-                                selectedPiece: prev.selectedPiece?.id === piece.id ? null : piece
-                              }))}
-                            />
-                          );
-                        }
-                        return null;
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="flex gap-4 text-sm mt-4">
-                <div>Total Pieces: {pieces.length}</div>
-                <div>Correctly Placed: {pieces.filter(p => p.isPlaced).length}</div>
-                <div>Remaining: {pieces.length - pieces.filter(p => p.isPlaced).length}</div>
-                <div>Completion: {completionPercentage.toFixed(2)}%</div>
-              </div>
-              <div className="mt-4">
-                <Bar data={data} options={{ scales: { y: { beginAtZero: true, max: 100 } } }} />
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+      {/* Share Modal */}
       {showShareModal && <ShareModal />}
     </div>
   );
 };
 
-export default CustomUserPuzzle;
+export default Custom3DPuzzle;
