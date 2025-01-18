@@ -12,10 +12,12 @@
   "dependencies": {
     "@babylonjs/core": "^7.43.0",
     "@firebasegen/default-connector": "file:dataconnect-generated/js/default-connector",
+    "@react-spring/web": "^9.7.5",
     "@react-three/drei": "^9.121.2",
     "@react-three/fiber": "^8.17.12",
     "babylonjs": "^7.43.0",
     "babylonjs-loaders": "^7.43.0",
+    "canvas-confetti": "^1.9.3",
     "firebase": "^11.1.0",
     "gsap": "^3.12.7",
     "html2canvas": "^1.4.1",

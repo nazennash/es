@@ -1,6 +1,7 @@
+// firebaseConfig.js
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -10,25 +11,15 @@ const firebaseConfig = {
     storageBucket: "nash-ac5c0.firebasestorage.app",
     messagingSenderId: "49955314335",
     appId: "1:49955314335:web:e12140aa04351c658060aa",
-    measurementId: "G-Y1LW4LFGR2",
-    databaseURL: "https://nash-ac5c0-default-rtdb.firebaseio.com/",
+    // measurementId: "G-Y1LW4LFGR2",
+    // databaseURL: "https://nash-ac5c0-default-rtdb.firebaseio.com/",
   };
 
-// Initialize Firebase
+
+
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const googleProvider = new GoogleAuthProvider();
-const storage = getStorage(app);
-// After Firebase initialization
 const db = getFirestore(app);
+const auth = getAuth(app);
+const storage = getStorage(app);
 
-
-export { auth, googleProvider, storage, app, db };
-
-// firebaseConfig.js
-
-
-
-
-
-
+export { app, db, auth, storage };
