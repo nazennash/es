@@ -184,97 +184,6 @@ class EnhancedParticleSystem {
   }
 }
 
-// Custom shader for puzzle piece material with relief effect
-// const puzzlePieceShader = {
-//   vertexShader: `
-//     varying vec2 vUv;
-//     varying vec3 vNormal;
-//     varying vec3 vViewPosition;
-    
-//     uniform vec2 uvOffset;
-//     uniform vec2 uvScale;
-//     uniform sampler2D heightMap;
-//     uniform float extrusionScale;
-//     uniform float time;
-    
-//     void main() {
-//       vUv = uvOffset + uv * uvScale;
-      
-//       // Sample height map for vertex displacement
-//       vec4 heightColor = texture2D(heightMap, vUv);
-//       float height = (heightColor.r + heightColor.g + heightColor.b) / 3.0;
-      
-//       // Add subtle wave animation to unplaced pieces
-//       float wave = sin(position.x * 5.0 + time) * 0.05 * (1.0 - heightColor.a);
-      
-//       // Calculate displaced position
-//       vec3 newPosition = position;
-//       newPosition.z += height * extrusionScale + wave;
-      
-//       // Calculate normal for lighting
-//       float eps = 0.01;
-//       float heightU = texture2D(heightMap, vUv + vec2(eps, 0.0)).r;
-//       float heightV = texture2D(heightMap, vUv + vec2(0.0, eps)).r;
-      
-//       vec3 normal = normalize(vec3(
-//         (height - heightU) / eps,
-//         (height - heightV) / eps,
-//         1.0
-//       ));
-      
-//       vNormal = normalMatrix * normal;
-//       vec4 mvPosition = modelViewMatrix * vec4(newPosition, 1.0);
-//       vViewPosition = -mvPosition.xyz;
-//       gl_Position = projectionMatrix * mvPosition;
-//     }
-//   `,
-//   fragmentShader: `
-//     uniform sampler2D map;
-//     uniform float selected;
-//     uniform float correctPosition;
-//     uniform float time;
-    
-//     varying vec2 vUv;
-//     varying vec3 vNormal;
-//     varying vec3 vViewPosition;
-    
-//     void main() {
-//       vec4 texColor = texture2D(map, vUv);
-      
-//       // Basic lighting
-//       vec3 normal = normalize(vNormal);
-//       vec3 viewDir = normalize(vViewPosition);
-      
-//       // Key light
-//       vec3 lightPos = vec3(5.0, 5.0, 5.0);
-//       vec3 lightDir = normalize(lightPos);
-//       float diff = max(dot(normal, lightDir), 0.0);
-      
-//       // Rim light
-//       float rimStrength = 1.0 - max(dot(viewDir, normal), 0.0);
-//       rimStrength = pow(rimStrength, 3.0);
-      
-//       // Selection highlight
-//       vec3 highlightColor = vec3(0.3, 0.6, 1.0);
-//       float highlightStrength = selected * 0.5 * (0.5 + 0.5 * sin(time * 3.0));
-      
-//       // Correct position glow
-//       vec3 correctColor = vec3(0.2, 1.0, 0.3);
-//       float correctStrength = correctPosition * 0.5 * (0.5 + 0.5 * sin(time * 2.0));
-      
-//       // Combine lighting
-//       vec3 ambient = vec3(0.3);
-//       vec3 diffuse = vec3(0.7) * diff;
-//       vec3 rim = vec3(0.5) * rimStrength;
-      
-//       vec3 finalColor = texColor.rgb * (ambient + diffuse) + rim;
-//       finalColor += highlightColor * highlightStrength + correctColor * correctStrength;
-      
-//       gl_FragColor = vec4(finalColor, texColor.a);
-//     }
-//   `
-// };
-
 // Replace the existing puzzlePieceShader object with this simpler version
 const puzzlePieceShader = {
   vertexShader: `
@@ -389,6 +298,10 @@ const PuzzleGame = () => {
   const [progress, setProgress] = useState(0);
   const [completedPieces, setCompletedPieces] = useState(0);
   const [totalPieces, setTotalPieces] = useState(0);
+  const [timeElapsed, setTimeElapsed] = useState(0);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const timerRef = useRef(null);
+  const guideOutlinesRef = useRef([]);
   
   // Three.js references
   const sceneRef = useRef(null);
@@ -400,6 +313,43 @@ const PuzzleGame = () => {
   const particleSystemRef = useRef(null);
   const puzzlePiecesRef = useRef([]);
   const selectedPieceRef = useRef(null);
+
+  // Timer formatting utility
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Create visual guides for piece placement
+  const createPlacementGuides = (gridSize, pieceSize) => {
+    // Clear existing guides
+    guideOutlinesRef.current.forEach(guide => sceneRef.current.remove(guide));
+    guideOutlinesRef.current = [];
+
+    for (let y = 0; y < gridSize.y; y++) {
+      for (let x = 0; x < gridSize.x; x++) {
+        // Create outline geometry
+        const outlineGeometry = new THREE.EdgesGeometry(
+          new THREE.PlaneGeometry(pieceSize.x * 0.95, pieceSize.y * 0.95)
+        );
+        const outlineMaterial = new THREE.LineBasicMaterial({ 
+          color: 0x4a90e2,
+          transparent: true,
+          opacity: 0.5
+        });
+        const outline = new THREE.LineSegments(outlineGeometry, outlineMaterial);
+
+        // Position the outline
+        outline.position.x = (x - gridSize.x / 2 + 0.5) * pieceSize.x;
+        outline.position.y = (y - gridSize.y / 2 + 0.5) * pieceSize.y;
+        outline.position.z = -0.01; // Slightly behind pieces
+
+        sceneRef.current.add(outline);
+        guideOutlinesRef.current.push(outline);
+      }
+    }
+  };
   
   // Initialize Three.js scene
   useEffect(() => {
@@ -506,12 +456,15 @@ const PuzzleGame = () => {
     
     // Define puzzle grid
     const gridSize = { x: 4, y: 3 };
-    setTotalPieces(gridSize.x * gridSize.y);
-    
     const pieceSize = {
       x: 1 * aspectRatio / gridSize.x,
       y: 1 / gridSize.y
     };
+
+    setTotalPieces(gridSize.x * gridSize.y);
+
+    // Create placement guides
+    createPlacementGuides(gridSize, pieceSize);
 
     // Generate pieces
     for (let y = 0; y < gridSize.y; y++) {
@@ -558,6 +511,11 @@ const PuzzleGame = () => {
       }
     }
 
+    // Start timer when pieces are created
+    setTimeElapsed(0);
+    setIsTimerRunning(true);
+    
+
     // Scramble pieces
     puzzlePiecesRef.current.forEach(piece => {
       piece.position.x += (Math.random() - 0.5) * 2;
@@ -566,6 +524,31 @@ const PuzzleGame = () => {
       piece.rotation.z = (Math.random() - 0.5) * 0.5;
     });
   };
+
+  // Timer effect
+  useEffect(() => {
+    if (isTimerRunning) {
+      timerRef.current = setInterval(() => {
+        setTimeElapsed(prev => prev + 1);
+      }, 1000);
+    }
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [isTimerRunning]);
+
+  // Stop timer when puzzle is complete
+  useEffect(() => {
+    if (progress === 100) {
+      setIsTimerRunning(false);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    }
+  }, [progress]);
 
   // Handle piece selection and movement
   useEffect(() => {
@@ -702,6 +685,8 @@ const PuzzleGame = () => {
     reader.readAsDataURL(file);
   };
 
+  
+
   return (
     <div className="w-full h-screen flex flex-col bg-gray-900">
       {/* Header with controls */}
@@ -720,6 +705,12 @@ const PuzzleGame = () => {
               <span>Upload Photo</span>
             </div>
           </label>
+
+          {/* Timer display */}
+          <div className="flex items-center gap-2 text-white bg-gray-700 px-3 py-1 rounded-lg">
+            <Clock className="w-4 h-4" />
+            <span>{formatTime(timeElapsed)}</span>
+          </div>
           
           <button className="p-2 text-gray-300 hover:text-white">
             <Info className="w-5 h-5" />
@@ -744,7 +735,7 @@ const PuzzleGame = () => {
             {progress === 100 && (
               <div className="flex items-center gap-2 text-green-400">
                 <Check className="w-5 h-5" />
-                <span>Complete!</span>
+                <span>Complete! - {formatTime(timeElapsed)}</span>
               </div>
             )}
           </div>
