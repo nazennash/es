@@ -1,6 +1,7 @@
 // FirebaseService.js
 import { db, storage } from './firebase';
-import { 
+import {
+  getFirestore,  
   collection, 
   addDoc, 
   updateDoc, 
@@ -213,6 +214,31 @@ class FirebaseService {
       });
     } catch (error) {
       console.error('Error cleaning up room:', error);
+      throw error;
+    }
+  }
+  async updatePlayerAchievements(roomId, playerId, achievements) {
+    try {
+      const playerRef = doc(this.db, `rooms/${roomId}/players`, playerId);
+      await updateDoc(playerRef, {
+        achievements,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error updating player achievements:', error);
+      throw error;
+    }
+  }
+
+  async updateHighScore(roomId, playerId, score) {
+    try {
+      const playerRef = doc(this.db, `rooms/${roomId}/players`, playerId);
+      await updateDoc(playerRef, {
+        highScore: score,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error updating high score:', error);
       throw error;
     }
   }

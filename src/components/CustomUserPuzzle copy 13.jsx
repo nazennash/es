@@ -1,22 +1,13 @@
-import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Canvas, useLoader, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
-// Cube Component with texture handling
-function Cube({ position, textureUrl, textureOffsetX, textureOffsetY, isActive, onClick }) {
+// Cube Component for 3D Puzzle
+function Cube({ position, texture, isActive, onClick }) {
   const meshRef = useRef();
-  const texture = useLoader(THREE.TextureLoader, textureUrl);
   
-  useEffect(() => {
-    if (texture) {
-      texture.repeat.set(1/3, 1/3);
-      texture.offset.set(textureOffsetX, textureOffsetY);
-      texture.needsUpdate = true;
-    }
-  }, [texture, textureOffsetX, textureOffsetY]);
-
   useFrame(() => {
     if (meshRef.current) {
       meshRef.current.scale.setScalar(isActive ? 1.1 : 1);
@@ -28,15 +19,6 @@ function Cube({ position, textureUrl, textureOffsetX, textureOffsetY, isActive, 
       <boxGeometry args={[1, 1, 1]} />
       <meshStandardMaterial map={texture} />
     </mesh>
-  );
-}
-
-// Loading screen component
-function LoadingScreen() {
-  return (
-    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 text-white">
-      <div className="text-xl">Loading...</div>
-    </div>
   );
 }
 
@@ -65,14 +47,12 @@ function GameStats({ score, timeRemaining, activeCubes, totalCubes, maxScore }) 
         <div className="bg-white p-4 rounded-lg shadow-md">
           <div className="flex justify-between items-center mb-2">
             <h3 className="text-sm font-medium text-gray-700">Score</h3>
-            <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/>
-            </svg>
+            <svg className="w-4 h-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/></svg>
           </div>
           <div className="text-2xl font-bold text-gray-900">{score}</div>
           <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
             <div 
-              className="bg-blue-600 rounded-full h-2 transition-all duration-300" 
+              className="bg-blue-600 rounded-full h-2" 
               style={{ width: `${completionPercentage}%` }}
             />
           </div>
@@ -82,15 +62,12 @@ function GameStats({ score, timeRemaining, activeCubes, totalCubes, maxScore }) 
         <div className="bg-white p-4 rounded-lg shadow-md">
           <div className="flex justify-between items-center mb-2">
             <h3 className="text-sm font-medium text-gray-700">Time Remaining</h3>
-            <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/>
-              <polyline points="12 6 12 12 16 14"/>
-            </svg>
+            <svg className="w-4 h-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           </div>
           <div className="text-2xl font-bold text-gray-900">{formatTime(timeRemaining)}</div>
           <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
             <div 
-              className="bg-green-600 rounded-full h-2 transition-all duration-300" 
+              className="bg-green-600 rounded-full h-2" 
               style={{ width: `${timePercentage}%` }}
             />
           </div>
@@ -100,9 +77,7 @@ function GameStats({ score, timeRemaining, activeCubes, totalCubes, maxScore }) 
         <div className="bg-white p-4 rounded-lg shadow-md">
           <div className="flex justify-between items-center mb-2">
             <h3 className="text-sm font-medium text-gray-700">Completion</h3>
-            <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-            </svg>
+            <svg className="w-4 h-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
           </div>
           <div className="text-2xl font-bold text-gray-900">{Math.round(completionPercentage)}%</div>
           <p className="text-xs text-gray-500 mt-2">
@@ -135,7 +110,6 @@ function GameStats({ score, timeRemaining, activeCubes, totalCubes, maxScore }) 
 // Image Upload Component
 function ImageUpload({ onUpload }) {
   const [dragging, setDragging] = useState(false);
-  const [error, setError] = useState('');
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -158,8 +132,6 @@ function ImageUpload({ onUpload }) {
     e.preventDefault();
     e.stopPropagation();
     setDragging(false);
-    setError('');
-    
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFiles(e.dataTransfer.files);
     }
@@ -167,77 +139,61 @@ function ImageUpload({ onUpload }) {
 
   const handleFiles = (files) => {
     const file = files[0];
-    
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      setError('Please upload an image file');
-      return;
-    }
-
     const reader = new FileReader();
     reader.onload = (e) => {
-      // Create an image to check dimensions
-      const img = new Image();
-      img.onload = () => {
-        if (img.width < 300 || img.height < 300) {
-          setError('Image must be at least 300x300 pixels');
-          return;
-        }
-        onUpload(e.target.result);
-      };
-      img.src = e.target.result;
-    };
-    reader.onerror = () => {
-      setError('Error reading file');
+      onUpload(e.target.result);
     };
     reader.readAsDataURL(file);
   };
 
   return (
-    <div className="text-center">
-      <div
-        className={`w-64 h-64 border-2 border-dashed rounded-lg flex flex-col items-center justify-center transition-colors ${
-          dragging ? 'border-blue-500 bg-blue-100 bg-opacity-10' : 'border-gray-300'
-        }`}
-        onDragEnter={handleDragIn}
-        onDragLeave={handleDragOut}
-        onDragOver={handleDrag}
-        onDrop={handleDrop}
+    <div
+      className={`w-64 h-64 border-2 border-dashed rounded-lg flex flex-col items-center justify-center ${
+        dragging ? 'border-blue-500 bg-blue-100' : 'border-gray-300'
+      }`}
+      onDragEnter={handleDragIn}
+      onDragLeave={handleDragOut}
+      onDragOver={handleDrag}
+      onDrop={handleDrop}
+    >
+      <svg className="w-12 h-12 text-gray-400 mb-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <p className="mb-4 text-center text-gray-700">Drag and drop an image here, or click to select</p>
+      <button 
+        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 relative"
       >
-        <svg className="w-12 h-12 text-gray-400 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="17 8 12 3 7 8"/>
-          <line x1="12" y1="3" x2="12" y2="15"/>
-        </svg>
-        <p className="mb-4 text-center text-gray-300">
-          Drag and drop an image here, or click to select
-        </p>
-        <button 
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 relative transition-colors"
-        >
-          Upload Image
-          <input
-            type="file"
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            onChange={(e) => e.target.files && handleFiles(e.target.files)}
-            accept="image/*"
-          />
-        </button>
-      </div>
-      {error && (
-        <p className="mt-2 text-red-500">{error}</p>
-      )}
+        Upload Image
+        <input
+          type="file"
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          onChange={(e) => e.target.files && handleFiles(e.target.files)}
+          accept="image/*"
+        />
+      </button>
     </div>
   );
 }
 
-// 3D Game Component
+// Main Game Component
 function Game3D({ imageUrl, activeCubes, onCubeClick }) {
+  const texture = useLoader(THREE.TextureLoader, imageUrl);
+  
   const cubePositions = [
     [-1, 1, 0], [0, 1, 0], [1, 1, 0],
     [-1, 0, 0], [0, 0, 0], [1, 0, 0],
     [-1, -1, 0], [0, -1, 0], [1, -1, 0],
   ];
+
+  const createCubeTexture = (index) => {
+    const size = 1 / 3;
+    const offsetX = (index % 3) * size;
+    const offsetY = Math.floor(index / 3) * size;
+    return new THREE.Texture(texture.image).clone()
+      .transformUv(new THREE.Vector2(offsetX, offsetY), new THREE.Vector2(size, size));
+  };
 
   return (
     <group>
@@ -245,9 +201,7 @@ function Game3D({ imageUrl, activeCubes, onCubeClick }) {
         <Cube
           key={index}
           position={position}
-          textureUrl={imageUrl}
-          textureOffsetX={(index % 3) * (1/3)}
-          textureOffsetY={Math.floor(index / 3) * (1/3)}
+          texture={createCubeTexture(index)}
           isActive={activeCubes.includes(index)}
           onClick={(e) => {
             e.stopPropagation();
@@ -263,10 +217,11 @@ function Game3D({ imageUrl, activeCubes, onCubeClick }) {
         lineHeight={1}
         letterSpacing={0.02}
         textAlign="center"
+        font="/fonts/Inter-Regular.ttf"
         anchorX="center"
         anchorY="middle"
       >
-        Click cubes to solve the puzzle!
+        Activate all cubes to complete the puzzle!
       </Text>
     </group>
   );
@@ -341,18 +296,16 @@ export default function PuzzleGame() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="h-[600px] bg-black rounded-lg relative">
-            <Suspense fallback={<LoadingScreen />}>
-              <Canvas camera={{ position: [0, 0, 5] }}>
-                <ambientLight intensity={0.5} />
-                <pointLight position={[10, 10, 10]} />
-                <Game3D
-                  imageUrl={imageUrl}
-                  activeCubes={activeCubes}
-                  onCubeClick={handleCubeClick}
-                />
-                <OrbitControls enablePan={false} />
-              </Canvas>
-            </Suspense>
+            <Canvas camera={{ position: [0, 0, 5] }}>
+              <ambientLight intensity={0.5} />
+              <pointLight position={[10, 10, 10]} />
+              <Game3D
+                imageUrl={imageUrl}
+                activeCubes={activeCubes}
+                onCubeClick={handleCubeClick}
+              />
+              <OrbitControls />
+            </Canvas>
             
             {gameState === 'complete' && (
               <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center">
@@ -362,7 +315,7 @@ export default function PuzzleGame() {
                   </h2>
                   <p className="text-xl mb-4">Final Score: {score}</p>
                   <button 
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
                     onClick={resetGame}
                   >
                     Play Again
@@ -383,7 +336,7 @@ export default function PuzzleGame() {
             
             <div className="flex justify-end">
               <button 
-                className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
+                className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600"
                 onClick={resetGame}
               >
                 New Puzzle

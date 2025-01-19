@@ -15,6 +15,7 @@
     "@react-spring/web": "^9.7.5",
     "@react-three/drei": "^9.121.2",
     "@react-three/fiber": "^8.17.12",
+    "@shadcn/ui": "^0.0.4",
     "babylonjs": "^7.43.0",
     "babylonjs-loaders": "^7.43.0",
     "canvas-confetti": "^1.9.3",
