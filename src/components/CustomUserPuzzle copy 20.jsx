@@ -185,109 +185,47 @@ class EnhancedParticleSystem {
 }
 
 // Custom shader for puzzle piece material with relief effect
-// const puzzlePieceShader = {
-//   vertexShader: `
-//     varying vec2 vUv;
-//     varying vec3 vNormal;
-//     varying vec3 vViewPosition;
-    
-//     uniform vec2 uvOffset;
-//     uniform vec2 uvScale;
-//     uniform sampler2D heightMap;
-//     uniform float extrusionScale;
-//     uniform float time;
-    
-//     void main() {
-//       vUv = uvOffset + uv * uvScale;
-      
-//       // Sample height map for vertex displacement
-//       vec4 heightColor = texture2D(heightMap, vUv);
-//       float height = (heightColor.r + heightColor.g + heightColor.b) / 3.0;
-      
-//       // Add subtle wave animation to unplaced pieces
-//       float wave = sin(position.x * 5.0 + time) * 0.05 * (1.0 - heightColor.a);
-      
-//       // Calculate displaced position
-//       vec3 newPosition = position;
-//       newPosition.z += height * extrusionScale + wave;
-      
-//       // Calculate normal for lighting
-//       float eps = 0.01;
-//       float heightU = texture2D(heightMap, vUv + vec2(eps, 0.0)).r;
-//       float heightV = texture2D(heightMap, vUv + vec2(0.0, eps)).r;
-      
-//       vec3 normal = normalize(vec3(
-//         (height - heightU) / eps,
-//         (height - heightV) / eps,
-//         1.0
-//       ));
-      
-//       vNormal = normalMatrix * normal;
-//       vec4 mvPosition = modelViewMatrix * vec4(newPosition, 1.0);
-//       vViewPosition = -mvPosition.xyz;
-//       gl_Position = projectionMatrix * mvPosition;
-//     }
-//   `,
-//   fragmentShader: `
-//     uniform sampler2D map;
-//     uniform float selected;
-//     uniform float correctPosition;
-//     uniform float time;
-    
-//     varying vec2 vUv;
-//     varying vec3 vNormal;
-//     varying vec3 vViewPosition;
-    
-//     void main() {
-//       vec4 texColor = texture2D(map, vUv);
-      
-//       // Basic lighting
-//       vec3 normal = normalize(vNormal);
-//       vec3 viewDir = normalize(vViewPosition);
-      
-//       // Key light
-//       vec3 lightPos = vec3(5.0, 5.0, 5.0);
-//       vec3 lightDir = normalize(lightPos);
-//       float diff = max(dot(normal, lightDir), 0.0);
-      
-//       // Rim light
-//       float rimStrength = 1.0 - max(dot(viewDir, normal), 0.0);
-//       rimStrength = pow(rimStrength, 3.0);
-      
-//       // Selection highlight
-//       vec3 highlightColor = vec3(0.3, 0.6, 1.0);
-//       float highlightStrength = selected * 0.5 * (0.5 + 0.5 * sin(time * 3.0));
-      
-//       // Correct position glow
-//       vec3 correctColor = vec3(0.2, 1.0, 0.3);
-//       float correctStrength = correctPosition * 0.5 * (0.5 + 0.5 * sin(time * 2.0));
-      
-//       // Combine lighting
-//       vec3 ambient = vec3(0.3);
-//       vec3 diffuse = vec3(0.7) * diff;
-//       vec3 rim = vec3(0.5) * rimStrength;
-      
-//       vec3 finalColor = texColor.rgb * (ambient + diffuse) + rim;
-//       finalColor += highlightColor * highlightStrength + correctColor * correctStrength;
-      
-//       gl_FragColor = vec4(finalColor, texColor.a);
-//     }
-//   `
-// };
-
-// Replace the existing puzzlePieceShader object with this simpler version
 const puzzlePieceShader = {
   vertexShader: `
     varying vec2 vUv;
     varying vec3 vNormal;
+    varying vec3 vViewPosition;
     
     uniform vec2 uvOffset;
     uniform vec2 uvScale;
+    uniform sampler2D heightMap;
+    uniform float extrusionScale;
+    uniform float time;
     
     void main() {
       vUv = uvOffset + uv * uvScale;
-      vNormal = normalize(normalMatrix * normal);
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      
+      // Sample height map for vertex displacement
+      vec4 heightColor = texture2D(heightMap, vUv);
+      float height = (heightColor.r + heightColor.g + heightColor.b) / 3.0;
+      
+      // Add subtle wave animation to unplaced pieces
+      float wave = sin(position.x * 5.0 + time) * 0.05 * (1.0 - heightColor.a);
+      
+      // Calculate displaced position
+      vec3 newPosition = position;
+      newPosition.z += height * extrusionScale + wave;
+      
+      // Calculate normal for lighting
+      float eps = 0.01;
+      float heightU = texture2D(heightMap, vUv + vec2(eps, 0.0)).r;
+      float heightV = texture2D(heightMap, vUv + vec2(0.0, eps)).r;
+      
+      vec3 normal = normalize(vec3(
+        (height - heightU) / eps,
+        (height - heightV) / eps,
+        1.0
+      ));
+      
+      vNormal = normalMatrix * normal;
+      vec4 mvPosition = modelViewMatrix * vec4(newPosition, 1.0);
+      vViewPosition = -mvPosition.xyz;
+      gl_Position = projectionMatrix * mvPosition;
     }
   `,
   fragmentShader: `
@@ -298,14 +236,23 @@ const puzzlePieceShader = {
     
     varying vec2 vUv;
     varying vec3 vNormal;
+    varying vec3 vViewPosition;
     
     void main() {
       vec4 texColor = texture2D(map, vUv);
       
       // Basic lighting
       vec3 normal = normalize(vNormal);
-      vec3 lightDir = normalize(vec3(5.0, 5.0, 5.0));
+      vec3 viewDir = normalize(vViewPosition);
+      
+      // Key light
+      vec3 lightPos = vec3(5.0, 5.0, 5.0);
+      vec3 lightDir = normalize(lightPos);
       float diff = max(dot(normal, lightDir), 0.0);
+      
+      // Rim light
+      float rimStrength = 1.0 - max(dot(viewDir, normal), 0.0);
+      rimStrength = pow(rimStrength, 3.0);
       
       // Selection highlight
       vec3 highlightColor = vec3(0.3, 0.6, 1.0);
@@ -316,14 +263,17 @@ const puzzlePieceShader = {
       float correctStrength = correctPosition * 0.5 * (0.5 + 0.5 * sin(time * 2.0));
       
       // Combine lighting
-      vec3 finalColor = texColor.rgb * (vec3(0.3) + vec3(0.7) * diff);
+      vec3 ambient = vec3(0.3);
+      vec3 diffuse = vec3(0.7) * diff;
+      vec3 rim = vec3(0.5) * rimStrength;
+      
+      vec3 finalColor = texColor.rgb * (ambient + diffuse) + rim;
       finalColor += highlightColor * highlightStrength + correctColor * correctStrength;
       
       gl_FragColor = vec4(finalColor, texColor.a);
     }
   `
 };
-
 
 // Particle system for visual effects
 class ParticleSystem {
