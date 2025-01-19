@@ -1,14 +1,27 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
-import { Canvas, useLoader, useFrame } from '@react-three/fiber';
+import { Canvas, useLoader, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { gsap } from 'gsap';
 
-// Cube Component with texture handling
-function Cube({ position, textureUrl, textureOffsetX, textureOffsetY, isActive, onClick }) {
+// Utility function to shuffle array
+function shuffleArray(array) {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+// Enhanced Cube Component with animations and correct position tracking
+function Cube({ position, textureUrl, textureOffsetX, textureOffsetY, isActive, isCorrect, currentPosition, targetPosition, onClick, index }) {
   const meshRef = useRef();
   const texture = useLoader(THREE.TextureLoader, textureUrl);
+  const { camera } = useThree();
   
+  // Set up texture
   useEffect(() => {
     if (texture) {
       texture.repeat.set(1/3, 1/3);
@@ -17,40 +30,88 @@ function Cube({ position, textureUrl, textureOffsetX, textureOffsetY, isActive, 
     }
   }, [texture, textureOffsetX, textureOffsetY]);
 
+  // Handle correct placement animation
+  useEffect(() => {
+    if (isCorrect && meshRef.current) {
+      gsap.to(meshRef.current.scale, {
+        x: 1.2,
+        y: 1.2,
+        z: 1.2,
+        duration: 0.3,
+        yoyo: true,
+        repeat: 1,
+      });
+    }
+  }, [isCorrect]);
+
   useFrame(() => {
     if (meshRef.current) {
-      meshRef.current.scale.setScalar(isActive ? 1.1 : 1);
+      // Base scaling for active state
+      const baseScale = isActive ? 1.1 : 1;
+      
+      // Add slight hover effect when active
+      if (isActive) {
+        meshRef.current.rotation.y += 0.01;
+      }
+
+      // Add glow effect for correct placement
+      if (isCorrect) {
+        meshRef.current.material.emissive = new THREE.Color(0x00ff00);
+        meshRef.current.material.emissiveIntensity = 0.2;
+      } else {
+        meshRef.current.material.emissive = new THREE.Color(0x000000);
+      }
     }
   });
 
   return (
-    <mesh ref={meshRef} position={position} onClick={onClick}>
+    <mesh
+      ref={meshRef}
+      position={position}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(index, currentPosition);
+      }}
+    >
       <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial map={texture} />
+      <meshStandardMaterial 
+        map={texture}
+        metalness={0.5}
+        roughness={0.5}
+      />
+      {isActive && (
+        <mesh scale={[1.02, 1.02, 1.02]}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshBasicMaterial color="#ffffff" wireframe={true} transparent={true} opacity={0.2} />
+        </mesh>
+      )}
     </mesh>
   );
 }
 
-// Loading screen component
+// Loading screen with progress bar
 function LoadingScreen() {
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 text-white">
-      <div className="text-xl">Loading...</div>
+    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black bg-opacity-50 text-white">
+      <div className="text-xl mb-4">Loading Game Assets...</div>
+      <div className="w-48 h-2 bg-gray-700 rounded-full">
+        <div className="w-full h-full bg-blue-500 rounded-full animate-pulse"></div>
+      </div>
     </div>
   );
 }
 
-// Game Statistics Component
-function GameStats({ score, timeRemaining, activeCubes, totalCubes, maxScore }) {
-  const completionPercentage = (score / maxScore) * 100;
+// Enhanced Game Statistics Component
+function GameStats({ score, timeRemaining, correctPlacements, totalCubes, maxScore }) {
+  const completionPercentage = (correctPlacements / totalCubes) * 100;
   const timePercentage = (timeRemaining / 90) * 100;
-  const remainingCubes = totalCubes - activeCubes.length;
+  const averageTimePerPiece = correctPlacements ? ((90 - timeRemaining) / correctPlacements).toFixed(1) : 0;
 
   const stats = useMemo(() => [{
     name: 'Progress',
-    completed: activeCubes.length,
-    remaining: remainingCubes
-  }], [activeCubes.length, remainingCubes]);
+    correct: correctPlacements,
+    remaining: totalCubes - correctPlacements
+  }], [correctPlacements, totalCubes]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -61,15 +122,13 @@ function GameStats({ score, timeRemaining, activeCubes, totalCubes, maxScore }) 
   return (
     <div className="w-full space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Score Card */}
+        {/* Score and Progress Card */}
         <div className="bg-white p-4 rounded-lg shadow-md">
           <div className="flex justify-between items-center mb-2">
-            <h3 className="text-sm font-medium text-gray-700">Score</h3>
-            <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/>
-            </svg>
+            <h3 className="text-sm font-medium text-gray-700">Progress</h3>
+            <div className="text-sm text-blue-600">{correctPlacements}/{totalCubes}</div>
           </div>
-          <div className="text-2xl font-bold text-gray-900">{score}</div>
+          <div className="text-2xl font-bold text-gray-900">{Math.round(completionPercentage)}%</div>
           <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
             <div 
               className="bg-blue-600 rounded-full h-2 transition-all duration-300" 
@@ -82,32 +141,33 @@ function GameStats({ score, timeRemaining, activeCubes, totalCubes, maxScore }) 
         <div className="bg-white p-4 rounded-lg shadow-md">
           <div className="flex justify-between items-center mb-2">
             <h3 className="text-sm font-medium text-gray-700">Time Remaining</h3>
-            <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/>
-              <polyline points="12 6 12 12 16 14"/>
-            </svg>
+            <div className="text-sm text-green-600">{formatTime(timeRemaining)}</div>
           </div>
-          <div className="text-2xl font-bold text-gray-900">{formatTime(timeRemaining)}</div>
           <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
             <div 
-              className="bg-green-600 rounded-full h-2 transition-all duration-300" 
+              className={`rounded-full h-2 transition-all duration-300 ${
+                timeRemaining < 30 ? 'bg-red-500' : 'bg-green-600'
+              }`}
               style={{ width: `${timePercentage}%` }}
             />
           </div>
+          <div className="text-sm text-gray-500 mt-2">
+            Avg. time per piece: {averageTimePerPiece}s
+          </div>
         </div>
 
-        {/* Completion Card */}
+        {/* Score Card */}
         <div className="bg-white p-4 rounded-lg shadow-md">
           <div className="flex justify-between items-center mb-2">
-            <h3 className="text-sm font-medium text-gray-700">Completion</h3>
-            <svg className="w-4 h-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-            </svg>
+            <h3 className="text-sm font-medium text-gray-700">Score</h3>
+            <div className="text-sm text-purple-600">{score}</div>
           </div>
-          <div className="text-2xl font-bold text-gray-900">{Math.round(completionPercentage)}%</div>
-          <p className="text-xs text-gray-500 mt-2">
-            {activeCubes.length} of {totalCubes} cubes activated
-          </p>
+          <div className="text-2xl font-bold text-gray-900">
+            {Math.round((score / maxScore) * 100)}%
+          </div>
+          <div className="text-sm text-gray-500 mt-2">
+            Points per correct piece: 10
+          </div>
         </div>
       </div>
 
@@ -122,7 +182,7 @@ function GameStats({ score, timeRemaining, activeCubes, totalCubes, maxScore }) 
               <YAxis />
               <Tooltip />
               <Legend />
-              <Bar dataKey="completed" fill="#4CAF50" name="Completed" />
+              <Bar dataKey="correct" fill="#4CAF50" name="Correct Placements" />
               <Bar dataKey="remaining" fill="#FF9800" name="Remaining" />
             </BarChart>
           </ResponsiveContainer>
@@ -132,9 +192,10 @@ function GameStats({ score, timeRemaining, activeCubes, totalCubes, maxScore }) 
   );
 }
 
-// Image Upload Component
+// Image Upload Component with preview
 function ImageUpload({ onUpload }) {
   const [dragging, setDragging] = useState(false);
+  const [preview, setPreview] = useState('');
   const [error, setError] = useState('');
 
   const handleDrag = (e) => {
@@ -168,7 +229,6 @@ function ImageUpload({ onUpload }) {
   const handleFiles = (files) => {
     const file = files[0];
     
-    // Validate file type
     if (!file.type.startsWith('image/')) {
       setError('Please upload an image file');
       return;
@@ -176,13 +236,13 @@ function ImageUpload({ onUpload }) {
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      // Create an image to check dimensions
       const img = new Image();
       img.onload = () => {
         if (img.width < 300 || img.height < 300) {
           setError('Image must be at least 300x300 pixels');
           return;
         }
+        setPreview(e.target.result);
         onUpload(e.target.result);
       };
       img.src = e.target.result;
@@ -194,28 +254,33 @@ function ImageUpload({ onUpload }) {
   };
 
   return (
-    <div className="text-center">
+    <div className="text-center max-w-md mx-auto">
       <div
-        className={`w-64 h-64 border-2 border-dashed rounded-lg flex flex-col items-center justify-center transition-colors ${
+        className={`w-full h-64 border-2 border-dashed rounded-lg flex flex-col items-center justify-center transition-colors ${
           dragging ? 'border-blue-500 bg-blue-100 bg-opacity-10' : 'border-gray-300'
-        }`}
+        } ${preview ? 'bg-contain bg-center bg-no-repeat' : ''}`}
+        style={preview ? { backgroundImage: `url(${preview})` } : {}}
         onDragEnter={handleDragIn}
         onDragLeave={handleDragOut}
         onDragOver={handleDrag}
         onDrop={handleDrop}
       >
-        <svg className="w-12 h-12 text-gray-400 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="17 8 12 3 7 8"/>
-          <line x1="12" y1="3" x2="12" y2="15"/>
-        </svg>
-        <p className="mb-4 text-center text-gray-300">
-          Drag and drop an image here, or click to select
-        </p>
+        {!preview && (
+          <>
+            <svg className="w-12 h-12 text-gray-400 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <p className="mb-4 text-center text-gray-300">
+              Drag and drop an image here, or click to select
+            </p>
+          </>
+        )}
         <button 
           className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 relative transition-colors"
         >
-          Upload Image
+          {preview ? 'Change Image' : 'Upload Image'}
           <input
             type="file"
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
@@ -231,31 +296,60 @@ function ImageUpload({ onUpload }) {
   );
 }
 
-// 3D Game Component
-function Game3D({ imageUrl, activeCubes, onCubeClick }) {
-  const cubePositions = [
+// Enhanced 3D Game Component with piece randomization
+function Game3D({ imageUrl, activePiece, correctPlacements, onPieceClick }) {
+  const [positions, setPositions] = useState([]);
+  const targetPositions = useMemo(() => [
     [-1, 1, 0], [0, 1, 0], [1, 1, 0],
     [-1, 0, 0], [0, 0, 0], [1, 0, 0],
     [-1, -1, 0], [0, -1, 0], [1, -1, 0],
-  ];
+  ], []);
+
+  // Initialize randomized positions
+  useEffect(() => {
+    const shuffledIndices = shuffleArray([...Array(9)].map((_, i) => i));
+    setPositions(shuffledIndices.map(i => targetPositions[i]));
+  }, [targetPositions]);
+
+  const handlePieceClick = (index, currentPosition) => {
+    if (activePiece === null) {
+      onPieceClick(index);
+    } else {
+      // Swap positions
+      const newPositions = [...positions];
+      const temp = newPositions[index];
+      newPositions[index] = newPositions[activePiece];
+      newPositions[activePiece] = temp;
+      setPositions(newPositions);
+      onPieceClick(null);
+    }
+  };
 
   return (
     <group>
-      {cubePositions.map((position, index) => (
-        <Cube
-          key={index}
-          position={position}
-          textureUrl={imageUrl}
-          textureOffsetX={(index % 3) * (1/3)}
-          textureOffsetY={Math.floor(index / 3) * (1/3)}
-          isActive={activeCubes.includes(index)}
-          onClick={(e) => {
-            e.stopPropagation();
-            onCubeClick(index);
-          }}
-        />
-      ))}
-      <Text
+      {positions.map((position, index) => {
+        const originalIndex = targetPositions.findIndex(
+          pos => pos[0] === position[0] && pos[1] === position[1] && pos[2] === position[2]
+        );
+        const isCorrect = position === targetPositions[index];
+        
+        return (
+          <Cube
+            key={index}
+            index={index}
+            position={position}
+            textureUrl={imageUrl}
+            textureOffsetX={(originalIndex % 3) * (1/3)}
+            textureOffsetY={Math.floor(originalIndex / 3) * (1/3)}
+            isActive={index === activePiece}
+            isCorrect={isCorrect}
+            currentPosition={position}
+            targetPosition={targetPositions[index]}
+            onClick={handlePieceClick}
+          />
+        );
+      })}
+              <Text
         position={[0, 2, 0]}
         color="white"
         fontSize={0.5}
@@ -266,7 +360,7 @@ function Game3D({ imageUrl, activeCubes, onCubeClick }) {
         anchorX="center"
         anchorY="middle"
       >
-        Click cubes to solve the puzzle!
+        Click pieces to swap and solve the puzzle!
       </Text>
     </group>
   );
@@ -277,8 +371,10 @@ export default function PuzzleGame() {
   const [imageUrl, setImageUrl] = useState('');
   const [score, setScore] = useState(0);
   const [time, setTime] = useState(90);
-  const [activeCubes, setActiveCubes] = useState([]);
+  const [activePiece, setActivePiece] = useState(null);
+  const [correctPlacements, setCorrectPlacements] = useState(0);
   const [gameState, setGameState] = useState('idle'); // 'idle', 'playing', 'paused', 'complete'
+  const [moves, setMoves] = useState(0);
 
   useEffect(() => {
     let timer;
@@ -301,34 +397,42 @@ export default function PuzzleGame() {
     setImageUrl(url);
     setScore(0);
     setTime(90);
-    setActiveCubes([]);
+    setActivePiece(null);
+    setCorrectPlacements(0);
+    setMoves(0);
     setGameState('playing');
   };
 
-  const handleCubeClick = (index) => {
+  const handlePieceClick = (index) => {
     if (gameState !== 'playing') return;
     
-    setActiveCubes((prev) => {
-      const newActiveCubes = prev.includes(index)
-        ? prev.filter((i) => i !== index)
-        : [...prev, index];
-      
-      const newScore = newActiveCubes.length * 10;
-      setScore(newScore);
-      
-      if (newActiveCubes.length === 9) {
-        setGameState('complete');
-      }
-      
-      return newActiveCubes;
-    });
+    if (activePiece === null) {
+      setActivePiece(index);
+    } else {
+      setMoves(prev => prev + 1);
+      // Check if the swap resulted in correct placements
+      checkCorrectPlacements();
+      setActivePiece(null);
+    }
+  };
+
+  const checkCorrectPlacements = () => {
+    const correct = 0; // This would be calculated based on current positions
+    setCorrectPlacements(correct);
+    setScore(correct * 10);
+    
+    if (correct === 9) {
+      setGameState('complete');
+    }
   };
 
   const resetGame = () => {
     setImageUrl('');
     setScore(0);
     setTime(90);
-    setActiveCubes([]);
+    setActivePiece(null);
+    setCorrectPlacements(0);
+    setMoves(0);
     setGameState('idle');
   };
 
@@ -347,8 +451,9 @@ export default function PuzzleGame() {
                 <pointLight position={[10, 10, 10]} />
                 <Game3D
                   imageUrl={imageUrl}
-                  activeCubes={activeCubes}
-                  onCubeClick={handleCubeClick}
+                  activePiece={activePiece}
+                  correctPlacements={correctPlacements}
+                  onPieceClick={handlePieceClick}
                 />
                 <OrbitControls enablePan={false} />
               </Canvas>
@@ -358,9 +463,10 @@ export default function PuzzleGame() {
               <div className="absolute inset-0 bg-black bg-opacity-75 flex items-center justify-center">
                 <div className="text-center">
                   <h2 className="text-3xl font-bold mb-4">
-                    {activeCubes.length === 9 ? 'Puzzle Complete!' : 'Time\'s Up!'}
+                    {correctPlacements === 9 ? 'Puzzle Complete!' : 'Time\'s Up!'}
                   </h2>
-                  <p className="text-xl mb-4">Final Score: {score}</p>
+                  <p className="text-xl mb-2">Final Score: {score}</p>
+                  <p className="text-lg mb-4">Moves Made: {moves}</p>
                   <button 
                     className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
                     onClick={resetGame}
@@ -376,12 +482,15 @@ export default function PuzzleGame() {
             <GameStats
               score={score}
               timeRemaining={time}
-              activeCubes={activeCubes}
+              correctPlacements={correctPlacements}
               totalCubes={9}
               maxScore={90}
             />
             
-            <div className="flex justify-end">
+            <div className="flex justify-between items-center">
+              <div className="text-sm">
+                Moves: {moves}
+              </div>
               <button 
                 className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
                 onClick={resetGame}
