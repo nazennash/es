@@ -1,1022 +1,664 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getDatabase, ref as dbRef, set, update, get, onValue, off } from 'firebase/database';
-import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Play, Home, LogOut, Share2, Download, Camera } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { handlePuzzleCompletion } from '../PuzzleCompletionHandler';
-import { Bar } from 'react-chartjs-2';
-import 'chart.js/auto';
-import html2canvas from 'html2canvas';
+import { DragControls } from 'three/examples/jsm/controls/DragControls';
+import { ZoomIn, ZoomOut, RotateCw, Play, Home, Camera, Share2, Info } from 'lucide-react';
+import gsap from 'gsap';
 
-const userData = JSON.parse(localStorage.getItem('authUser'));
-  const userId = userData.uid;
-  const userName = userData.displayName || userData.email;
+// Constants
+const EXTRUSION_DEPTH = 0.1;
+const PIECE_GAP = 0.05;
+const POSITION_TOLERANCE = 0.1;
+const ROTATION_TOLERANCE = 0.1;
+const DEFAULT_DIFFICULTY = 3;
+const MIN_DIFFICULTY = 2;
+const MAX_DIFFICULTY = 6;
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 
-  const user = { 
-    id: userId || `user-${Date.now()}`, 
-    name: userName || `Player ${Math.floor(Math.random() * 1000)}` 
-  };
-
-const storage = getStorage();
-
-// Create a helper for 3D transformations
-const createBasRelief = (imageData, depth = 2) => {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = imageData.width;
-  canvas.height = imageData.height;
-  ctx.putImageData(imageData, 0, 0);
-  
-  const geometry = new THREE.PlaneGeometry(10, 10, 32, 32);
-  const texture = new THREE.CanvasTexture(canvas);
-  
-  // Create displacement map from grayscale values
-  const displacementMap = new THREE.TextureLoader().load(canvas.toDataURL());
-  
-  const material = new THREE.MeshPhongMaterial({
-    map: texture,
-    displacementMap: displacementMap,
-    displacementScale: depth,
-    displacementBias: -0.5,
-    side: THREE.DoubleSide
-  });
-  
-  return { geometry, material };
-};
-
-// Create a piece class to handle 3D puzzle pieces
-class PuzzlePiece extends THREE.Mesh {
-  constructor(geometry, material, row, col, totalRows, totalCols) {
-    super(geometry, material);
-    this.row = row;
-    this.col = col;
-    this.correctPosition = new THREE.Vector3(
-      (col - totalCols/2) * 10.5,
-      (totalRows/2 - row) * 10.5,
-      0
-    );
-    this.isPlaced = false;
-  }
-}
-
-const Custom3DPuzzle = () => {
-  // State management
-  const [gameState, setGameState] = useState({
-    gameId: `game-${Date.now()}`,
-    imageUrl: '',
-    difficulty: 3,
-    timer: 0,
-    imageSize: { width: 0, height: 0 },
-    startTime: null,
-    isCompleted: false
-  });
-
-  const database = getDatabase();
-  const gameRef = useRef(dbRef(database, `games/${gameState.gameId}`));
-
-  const [isGameStarted, setIsGameStarted] = useState(false);
-
-  // Add these near the beginning of the component, with other state definitions:
-
-const [ui, setUi] = useState({
-  loading: true,
-  error: null,
-  imageUploading: false
-});
-
-const navigate = useNavigate();
-
-// Add relief depth state
-const [reliefDepth, setReliefDepth] = useState(2);
-
-// Add state for undo/redo functionality
-const [history, setHistory] = useState([]);
-const [redoStack, setRedoStack] = useState([]);
-
-// Add state for hint system
-const [showHint, setShowHint] = useState(false);
-
-// Add state for piece grouping
-const [selectedPieces, setSelectedPieces] = useState([]);
-
-// Add state for view presets
-const [viewPreset, setViewPreset] = useState('default');
-
-// Add state for progress tracking
-const [progress, setProgress] = useState(0);
-
-// Add state for showing expected result image
-const [showExpectedResult, setShowExpectedResult] = useState(false);
-
-// Add state for timer
-const [timer, setTimer] = useState(0);
-
-// Save game progress
-const saveGameProgress = async () => {
-  try {
-    const progress = {
-      gameState,
-      scene3D: {
-        pieces: scene3D.pieces.map(piece => ({
-          position: piece.position,
-          rotation: piece.rotation,
-          isPlaced: piece.isPlaced
-        }))
-      }
-    };
-    await set(gameRef.current, progress);
-    setUi(prev => ({ ...prev, error: { type: 'success', message: 'Game progress saved' } }));
-  } catch (err) {
-    console.error('Failed to save game progress:', err);
-    setUi(prev => ({ ...prev, error: { type: 'error', message: 'Failed to save game progress' } }));
-  }
-};
-
-// Resume game progress
-const resumeGameProgress = async () => {
-  try {
-    const snapshot = await get(gameRef.current);
-    if (snapshot.exists()) {
-      const progress = snapshot.val();
-      setGameState(progress.gameState);
-      setScene3D(prev => ({
-        ...prev,
-        pieces: progress.scene3D.pieces.map(pieceData => {
-          const piece = new PuzzlePiece(
-            new THREE.PlaneGeometry(10, 10, 32, 32),
-            new THREE.MeshPhongMaterial(),
-            0, 0, 0, 0
-          );
-          piece.position.copy(pieceData.position);
-          piece.rotation.copy(pieceData.rotation);
-          piece.isPlaced = pieceData.isPlaced;
-          return piece;
-        })
-      }));
-      setUi(prev => ({ ...prev, error: { type: 'success', message: 'Game progress resumed' } }));
-    }
-  } catch (err) {
-    console.error('Failed to resume game progress:', err);
-    setUi(prev => ({ ...prev, error: { type: 'error', message: 'Failed to resume game progress' } }));
-  }
-};
-
-// Handle undo
-const handleUndo = () => {
-  if (history.length === 0) return;
-  const lastState = history.pop();
-  setRedoStack([...redoStack, { gameState, scene3D }]);
-  setGameState(lastState.gameState);
-  setScene3D(lastState.scene3D);
-};
-
-// Handle redo
-const handleRedo = () => {
-  if (redoStack.length === 0) return;
-  const nextState = redoStack.pop();
-  setHistory([...history, { gameState, scene3D }]);
-  setGameState(nextState.gameState);
-  setScene3D(nextState.scene3D);
-};
-
-// Handle hint
-const handleHint = () => {
-  setShowHint(true);
-  setTimeout(() => setShowHint(false), 3000);
-};
-
-// Handle piece grouping
-const handlePieceGrouping = () => {
-  // Implement piece grouping logic
-};
-
-// Handle view preset change
-const handleViewPresetChange = (preset) => {
-  setViewPreset(preset);
-  if (preset === 'top') {
-    scene3D.camera.position.set(0, 50, 0);
-    scene3D.camera.lookAt(0, 0, 0);
-  } else if (preset === 'side') {
-    scene3D.camera.position.set(50, 0, 0);
-    scene3D.camera.lookAt(0, 0, 0);
-  } else {
-    scene3D.camera.position.set(0, 0, 30);
-    scene3D.camera.lookAt(0, 0, 0);
-  }
-};
-
-// Fetch initial game data
-useEffect(() => {
-  const fetchGameData = async () => {
-    try {
-      const snapshot = await get(gameRef.current);
-      if (snapshot.exists()) {
-        setGameState(snapshot.val());
-      } else {
-        await set(gameRef.current, gameState);
-      }
-    } catch (err) {
-      console.error('Failed to fetch game data:', err);
-      setUi(prev => ({
-        ...prev,
-        error: { type: 'error', message: 'Failed to fetch game data' }
-      }));
-    }
-  };
-
-  fetchGameData();
-
-  // Listen for real-time updates
-  const handleValueChange = (snapshot) => {
-    if (snapshot.exists()) {
-      setGameState(snapshot.val());
-    }
-  };
-
-  onValue(gameRef.current, handleValueChange);
-
-  // Cleanup listener on unmount
-  return () => {
-    off(gameRef.current, 'value', handleValueChange);
-  };
-}, []);
-
-// Add the difficulty change handler
-const handleDifficultyChange = async (event) => {
-  const newDifficulty = parseInt(event.target.value, 10);
-  try {
-    await update(gameRef.current, { difficulty: newDifficulty });
-    setGameState(prev => ({ ...prev, difficulty: newDifficulty }));
-    
-    if (!isGameStarted) {
-      // Clear existing 3D pieces
-      scene3D.pieces.forEach(piece => {
-        sceneRef.current.remove(piece);
-      });
-      setScene3D(prev => ({ ...prev, pieces: [] }));
-    }
-  } catch (err) {
-    console.error('Failed to update difficulty:', err);
-    setUi(prev => ({
-      ...prev,
-      error: { type: 'error', message: 'Failed to update difficulty' }
-    }));
-  }
-};
-
-// Add the handle puzzle complete function
-const handlePuzzleComplete = async () => {
-  if (!isGameStarted || gameState.isCompleted) return;
-
-  try {
-    const finalTime = Math.floor((Date.now() - gameState.startTime) / 1000);
-
-    const updates = {
-      isCompleted: true,
-      isGameStarted: false,
-      completionTime: finalTime,
-      finalTimer: finalTime
-    };
-
-    await update(gameRef.current, updates);
-    
-    setGameState(prev => ({
-      ...prev,
-      ...updates,
-      timer: finalTime
-    }));
-    
-    setIsGameStarted(false);
-
-    await handlePuzzleCompletion({
-      puzzleId: gameState.gameId,
-      startTime: gameState.startTime,
-      timer: finalTime,
-      difficulty: gameState.difficulty,
-      imageUrl: gameState.imageUrl,
-      userId: userId, 
-      playerName: userName,
+const PhotoPuzzle3D = () => {
+    // Game state
+    const [gameState, setGameState] = useState({
+        imageUrl: '',
+        difficulty: DEFAULT_DIFFICULTY,
+        timer: 0,
+        isStarted: false,
+        isCompleted: false,
+        startTime: null,
+        progress: 0
     });
 
-    setUi(prev => ({
-      ...prev,
-      error: { 
-        type: 'success', 
-        message: `Puzzle completed! Time: ${Math.floor(finalTime / 60)}:${String(finalTime % 60).padStart(2, '0')}` 
-      }
-    }));
+    // Scene state
+    const [sceneState, setSceneState] = useState({
+        pieces: [],
+        selectedPiece: null,
+        isDragging: false
+    });
 
-    setShowShareModal(true);
-
-  } catch (err) {
-    console.error('Failed to handle puzzle completion:', err);
-    setUi(prev => ({
-      ...prev,
-      error: { type: 'error', message: 'Failed to record puzzle completion' }
-    }));
-  }
-};
-
-  // Add image upload handler
-  const handleImageUpload = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    try {
-      setUi(prev => ({ ...prev, loading: true, error: null, imageUploading: true }));
-      
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('Image must be smaller than 5MB');
-      }
-      
-      if (!file.type.startsWith('image/')) {
-        throw new Error('File must be an image');
-      }
-
-      const imageRef = storageRef(storage, `puzzle-images/${gameState.gameId}/${file.name}`);
-      const snapshot = await uploadBytes(imageRef, file);
-      const url = await getDownloadURL(snapshot.ref);
-      
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = async () => {
-          try {
-            await update(gameRef.current, {
-              imageUrl: url,
-              imageSize: {
-                width: img.width,
-                height: img.height
-              }
-            });
-            
-            setGameState(prev => ({
-              ...prev,
-              imageUrl: url,
-              imageSize: { width: img.width, height: img.height }
-            }));
-            
-            setUi(prev => ({ ...prev, loading: false, imageUploading: false }));
-            resolve();
-          } catch (err) {
-            reject(new Error('Failed to update game with image information'));
-          }
-        };
-        
-        img.onerror = () => reject(new Error('Failed to load image'));
-        img.src = url;
-      });
-    } catch (err) {
-      console.error('Image upload error:', err);
-      setUi(prev => ({
-        ...prev,
-        error: { type: 'error', message: err.message || 'Failed to upload image' },
+    // UI state
+    const [ui, setUi] = useState({
         loading: false,
-        imageUploading: false
-      }));
-    }
-  };
-  
-  const [showShareModal, setShowShareModal] = useState(false);
+        error: null,
+        showControls: true,
+        showSettings: false,
+        showTutorial: false,
+        thumbnailUrl: null
+    });
 
-  // New 3D-specific state
-  const [scene3D, setScene3D] = useState({
-    pieces: [],
-    selectedPiece: null,
-    camera: null,
-    controls: null,
-    isDragging: false,
-    mouse: new THREE.Vector2(),
-    raycaster: new THREE.Raycaster()
-  });
+    // Refs
+    const mountRef = useRef(null);
+    const sceneRef = useRef(null);
+    const cameraRef = useRef(null);
+    const rendererRef = useRef(null);
+    const orbitControlsRef = useRef(null);
+    const dragControlsRef = useRef(null);
+    const raycasterRef = useRef(new THREE.Raycaster());
+    const mouseRef = useRef(new THREE.Vector2());
+    const gridRef = useRef(null);
+    const timerRef = useRef(null);
+    const animationFrameRef = useRef(null);
+    const progressBarRef = useRef(null);
 
-  // Refs for Three.js
-  const mountRef = useRef(null);
-  const rendererRef = useRef(null);
-  const sceneRef = useRef(new THREE.Scene());
-  const frameIdRef = useRef(null);
+    // Initialize scene
+    const initScene = useCallback(() => {
+        if (!mountRef.current) return;
 
-  // Initialize 3D scene
-  const initializeScene = useCallback(() => {
-    if (!mountRef.current) return;
+        // Scene
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf0f0f0);
+        sceneRef.current = scene;
 
-    // Setup renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-    renderer.shadowMap.enabled = true;
-    mountRef.current.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
-
-    // Setup camera
-    const camera = new THREE.PerspectiveCamera(
-      75,
-      mountRef.current.clientWidth / mountRef.current.clientHeight,
-      0.1,
-      1000
-    );
-    camera.position.z = 30;
-
-    // Setup lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(0, 10, 20);
-    directionalLight.castShadow = true;
-    sceneRef.current.add(ambientLight, directionalLight);
-
-    // Setup controls
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.maxDistance = 100;
-    controls.minDistance = 10;
-
-    // Add grid lines
-    const gridHelper = new THREE.GridHelper(100, 10);
-    sceneRef.current.add(gridHelper);
-
-    // Add visible boxes for piece placement
-    const boxMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff });
-    for (let row = 0; row < gameState.difficulty; row++) {
-      for (let col = 0; col < gameState.difficulty; col++) {
-        const boxGeometry = new THREE.BoxGeometry(10, 10, 0.1);
-        const edges = new THREE.EdgesGeometry(boxGeometry);
-        const line = new THREE.LineSegments(edges, boxMaterial);
-        line.position.set(
-          (col - gameState.difficulty / 2) * 10.5,
-          (gameState.difficulty / 2 - row) * 10.5,
-          0
+        // Camera
+        const camera = new THREE.PerspectiveCamera(
+            75,
+            mountRef.current.clientWidth / mountRef.current.clientHeight,
+            0.1,
+            1000
         );
-        sceneRef.current.add(line);
-      }
-    }
+        camera.position.set(0, 0, 5);
+        cameraRef.current = camera;
 
-    setScene3D(prev => ({
-      ...prev,
-      camera,
-      controls
-    }));
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({ 
+            antialias: true,
+            alpha: true
+        });
+        renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+        renderer.shadowMap.enabled = true;
+        mountRef.current.appendChild(renderer.domElement);
+        rendererRef.current = renderer;
 
-    // Animation loop
-    const animate = () => {
-      frameIdRef.current = requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(sceneRef.current, camera);
-    };
-    animate();
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
 
-    // Cleanup
-    return () => {
-      cancelAnimationFrame(frameIdRef.current);
-      renderer.dispose();
-      mountRef.current?.removeChild(renderer.domElement);
-    };
-  }, [gameState.difficulty]);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(10, 10, 10);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
 
-  // Handle window resize
-  useEffect(() => {
-    const handleResize = () => {
-      if (!mountRef.current || !rendererRef.current || !scene3D.camera) return;
+        // Grid helper
+        const grid = new THREE.GridHelper(10, 10, 0x888888, 0x888888);
+        grid.position.z = -0.5;
+        scene.add(grid);
+        gridRef.current = grid;
 
-      const width = mountRef.current.clientWidth;
-      const height = mountRef.current.clientHeight;
+        // Controls
+        const orbitControls = new OrbitControls(camera, renderer.domElement);
+        orbitControls.enableDamping = true;
+        orbitControls.dampingFactor = 0.05;
+        orbitControls.screenSpacePanning = true;
+        orbitControlsRef.current = orbitControls;
 
-      scene3D.camera.aspect = width / height;
-      scene3D.camera.updateProjectionMatrix();
-      rendererRef.current.setSize(width, height);
-    };
+        // Animation loop
+        const animate = () => {
+            animationFrameRef.current = requestAnimationFrame(animate);
+            orbitControls.update();
+            renderer.render(scene, camera);
+            gsap.ticker.tick();
+        };
+        animate();
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [scene3D.camera]);
+        // Window resize handler
+        const handleResize = () => {
+            if (!mountRef.current) return;
+            const width = mountRef.current.clientWidth;
+            const height = mountRef.current.clientHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        };
+        window.addEventListener('resize', handleResize);
 
-  // Mouse interaction handlers
-  const handleMouseDown = useCallback((event) => {
-    if (!scene3D.camera || !rendererRef.current) return;
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            if (animationFrameRef.current) {
+                cancelAnimationFrame(animationFrameRef.current);
+            }
+            if (mountRef.current && renderer.domElement) {
+                mountRef.current.removeChild(renderer.domElement);
+            }
+            renderer.dispose();
+        };
+    }, []);
 
-    const rect = rendererRef.current.domElement.getBoundingClientRect();
-    scene3D.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    scene3D.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    // Create puzzle pieces
+    const createPuzzlePieces = useCallback((texture) => {
+        if (!sceneRef.current) return;
 
-    scene3D.raycaster.setFromCamera(scene3D.mouse, scene3D.camera);
-    const intersects = scene3D.raycaster.intersectObjects(scene3D.pieces);
+        // Clear existing pieces
+        sceneRef.current.children
+            .filter(child => child.userData?.isPuzzlePiece)
+            .forEach(piece => sceneRef.current.remove(piece));
 
-    if (intersects.length > 0) {
-      setScene3D(prev => ({
-        ...prev,
-        selectedPiece: intersects[0].object,
-        isDragging: true
-      }));
-      
-      // Disable orbit controls while dragging
-      if (scene3D.controls) {
-        scene3D.controls.enabled = false;
-      }
-    }
-  }, [scene3D]);
+        const pieces = [];
+        const { difficulty } = gameState;
+        const pieceWidth = 1 / difficulty;
+        const pieceHeight = 1 / difficulty;
+        const textureAspect = texture.image.width / texture.image.height;
 
-  // ... (previous imports and code remain the same)
+        // Create pieces
+        for (let i = 0; i < difficulty; i++) {
+            for (let j = 0; j < difficulty; j++) {
+                // Geometry with beveled edges
+                const shape = new THREE.Shape();
+                const w = pieceWidth - PIECE_GAP;
+                const h = pieceHeight - PIECE_GAP;
+                const bevel = 0.02;
 
-  // Add mouse move handler
-  const handleMouseMove = useCallback((event) => {
-    if (!scene3D.isDragging || !scene3D.selectedPiece || !scene3D.camera) return;
+                shape.moveTo(0, bevel);
+                shape.lineTo(0, h - bevel);
+                shape.quadraticCurveTo(0, h, bevel, h);
+                shape.lineTo(w - bevel, h);
+                shape.quadraticCurveTo(w, h, w, h - bevel);
+                shape.lineTo(w, bevel);
+                shape.quadraticCurveTo(w, 0, w - bevel, 0);
+                shape.lineTo(bevel, 0);
+                shape.quadraticCurveTo(0, 0, 0, bevel);
 
-    const rect = rendererRef.current.domElement.getBoundingClientRect();
-    scene3D.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    scene3D.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+                const extrudeSettings = {
+                    steps: 1,
+                    depth: EXTRUSION_DEPTH,
+                    bevelEnabled: true,
+                    bevelThickness: 0.01,
+                    bevelSize: 0.01,
+                    bevelSegments: 1
+                };
 
-    // Project mouse position to 3D space
-    scene3D.raycaster.setFromCamera(scene3D.mouse, scene3D.camera);
-    const intersectPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-    const intersection = new THREE.Vector3();
-    scene3D.raycaster.ray.intersectPlane(intersectPlane, intersection);
+                const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
 
-    // Move selected piece
-    scene3D.selectedPiece.position.x = intersection.x;
-    scene3D.selectedPiece.position.y = intersection.y;
-  }, [scene3D]);
+                // Materials
+                const materials = [
+                    new THREE.MeshPhongMaterial({ 
+                        map: texture,
+                        shininess: 50
+                    }),
+                    new THREE.MeshPhongMaterial({ 
+                        color: 0x808080,
+                        shininess: 50
+                    })
+                ];
 
-  // Add mouse up handler
-  const handleMouseUp = useCallback(() => {
-    if (!scene3D.selectedPiece || !scene3D.isDragging) return;
+                // Create mesh
+                const piece = new THREE.Mesh(geometry, materials);
 
-    // Check if piece is near its correct position
-    const piece = scene3D.selectedPiece;
-    const distance = piece.position.distanceTo(piece.correctPosition);
-    
-    if (distance < 1) {
-      // Snap to correct position
-      piece.position.copy(piece.correctPosition);
-      piece.isPlaced = true;
+                // Set correct position
+                const correctX = (i - difficulty/2 + 0.5) * pieceWidth * 2;
+                const correctY = (j - difficulty/2 + 0.5) * pieceHeight * 2;
 
-      // Animate piece placement with green border
-      piece.material.color.set(0x00ff00);
-      setTimeout(() => piece.material.color.set(0xffffff), 500);
+                // Random initial position
+                piece.position.set(
+                    (Math.random() - 0.5) * 4,
+                    (Math.random() - 0.5) * 4,
+                    0
+                );
 
-      // Update progress
-      const placedPieces = scene3D.pieces.filter(p => p.isPlaced).length;
-      const totalPieces = scene3D.pieces.length;
-      setProgress((placedPieces / totalPieces) * 100);
+                // UV mapping
+                const uvAttribute = piece.geometry.attributes.uv;
+                for (let k = 0; k < uvAttribute.count; k++) {
+                    uvAttribute.setXY(
+                        k,
+                        (i + uvAttribute.getX(k)) / difficulty,
+                        1 - ((j + uvAttribute.getY(k)) / difficulty)
+                    );
+                }
 
-      // Check if puzzle is complete
-      const isComplete = scene3D.pieces.every(p => p.isPlaced);
-      if (isComplete) {
-        handlePuzzleComplete();
-      }
-    } else {
-      // Animate piece placement with red border
-      piece.material.color.set(0xff0000);
-      setTimeout(() => piece.material.color.set(0xffffff), 500);
-    }
+                // Metadata
+                piece.userData = {
+                    isPuzzlePiece: true,
+                    isPlaced: false,
+                    correctPosition: new THREE.Vector3(correctX, correctY, 0),
+                    initialRotation: piece.rotation.clone(),
+                    id: `piece-${i}-${j}`
+                };
 
-    // Save current state to history for undo functionality
-    setHistory(prev => [...prev, { gameState, scene3D: { ...scene3D, pieces: [...scene3D.pieces] } }]);
-    setRedoStack([]);
+                // Add to scene
+                sceneRef.current.add(piece);
+                pieces.push(piece);
+            }
+        }
 
-    // Re-enable orbit controls
-    if (scene3D.controls) {
-      scene3D.controls.enabled = true;
-    }
-
-    setScene3D(prev => ({
-      ...prev,
-      selectedPiece: null,
-      isDragging: false
-    }));
-  }, [scene3D, gameState]);
-
-  // Generate 3D puzzle pieces
-  const generate3DPuzzlePieces = async (imageUrl, difficulty) => {
-    // Load image and create texture
-    const textureLoader = new THREE.TextureLoader();
-    const texture = await new Promise((resolve) => {
-      textureLoader.load(imageUrl, (tex) => {
-        resolve(tex);
-      });
-    });
-
-    // Clear existing pieces
-    scene3D.pieces.forEach(piece => {
-      sceneRef.current.remove(piece);
-    });
-
-    const newPieces = [];
-    const pieceWidth = 10;
-    const pieceHeight = 10;
-
-    // Create pieces with bas-relief effect
-    for (let row = 0; row < difficulty; row++) {
-      for (let col = 0; col < difficulty; col++) {
-        // Create geometry for piece
-        const geometry = new THREE.PlaneGeometry(pieceWidth * 0.95, pieceHeight * 0.95);
-
-        // Create material with clipped texture
-        const material = new THREE.MeshPhongMaterial({
-          map: texture,
-          side: THREE.DoubleSide,
-          displacementMap: texture,
-          displacementScale: reliefDepth,
-          displacementBias: -0.5
+        // Setup drag controls
+        if (dragControlsRef.current) {
+            dragControlsRef.current.dispose();
+        }
+        const dragControls = new DragControls(pieces, cameraRef.current, rendererRef.current.domElement);
+        
+        dragControls.addEventListener('dragstart', (event) => {
+            orbitControlsRef.current.enabled = false;
+            setSceneState(prev => ({
+                ...prev,
+                selectedPiece: event.object,
+                isDragging: true
+            }));
         });
 
-        // Set UV mapping for the piece
-        const uvs = geometry.attributes.uv;
-        const uvArray = uvs.array;
-        for (let i = 0; i < uvArray.length; i += 2) {
-          uvArray[i] = (uvArray[i] + col) / difficulty;
-          uvArray[i + 1] = (uvArray[i + 1] + row) / difficulty;
+        dragControls.addEventListener('drag', (event) => {
+            event.object.position.z = 0;
+        });
+
+        dragControls.addEventListener('dragend', (event) => {
+            orbitControlsRef.current.enabled = true;
+            checkPiecePlacement(event.object);
+            setSceneState(prev => ({
+                ...prev,
+                isDragging: false
+            }));
+        });
+
+        dragControlsRef.current = dragControls;
+        setSceneState(prev => ({ ...prev, pieces }));
+
+        // Create and set thumbnail
+        const thumbnailCanvas = document.createElement('canvas');
+        thumbnailCanvas.width = 150;
+        thumbnailCanvas.height = 150 / textureAspect;
+        const ctx = thumbnailCanvas.getContext('2d');
+        ctx.drawImage(texture.image, 0, 0, thumbnailCanvas.width, thumbnailCanvas.height);
+        setUi(prev => ({ ...prev, thumbnailUrl: thumbnailCanvas.toDataURL() }));
+
+    }, [gameState.difficulty]);
+
+    // Check piece placement
+    const checkPiecePlacement = useCallback((piece) => {
+        if (!piece.userData?.correctPosition || piece.userData.isPlaced) return false;
+
+        const positionCorrect = piece.position.distanceTo(piece.userData.correctPosition) < POSITION_TOLERANCE;
+        const rotationCorrect = 
+            Math.abs(piece.rotation.x % (Math.PI * 2)) < ROTATION_TOLERANCE &&
+            Math.abs(piece.rotation.y % (Math.PI * 2)) < ROTATION_TOLERANCE &&
+            Math.abs(piece.rotation.z % (Math.PI * 2)) < ROTATION_TOLERANCE;
+
+        if (positionCorrect && rotationCorrect) {
+            // Snap animation
+            gsap.to(piece.position, {
+                x: piece.userData.correctPosition.x,
+                y: piece.userData.correctPosition.y,
+                z: piece.userData.correctPosition.z,
+                duration: 0.3,
+                ease: "back.out(2)"
+            });
+
+            gsap.to(piece.rotation, {
+                x: 0,
+                y: 0,
+                z: 0,
+                duration: 0.3,
+                ease: "back.out(2)"
+            });
+
+            // Success effect
+            const glowMaterial = piece.material[0].clone();
+            glowMaterial.emissive.setHex(0x00ff00);
+            glowMaterial.emissiveIntensity = 0.5;
+            
+            gsap.to(glowMaterial, {
+                emissiveIntensity: 0,
+                duration: 1,
+                ease: "power2.out"
+            });
+
+            piece.material[0] = glowMaterial;
+            piece.userData.isPlaced = true;
+
+            // Update progress
+            const progress = (sceneState.pieces.filter(p => p.userData.isPlaced).length / sceneState.pieces.length) * 100;
+            setGameState(prev => ({ ...prev, progress }));
+
+            // Check completion
+            if (progress === 100) {
+                handlePuzzleComplete();
+            }
+
+            return true;
         }
-        uvs.needsUpdate = true;
 
-        // Create piece and add to scene
-        const piece = new PuzzlePiece(geometry, material, row, col, difficulty, difficulty);
+        return false;
+    }, [sceneState.pieces]);
+
+    // Handle puzzle completion
+    const handlePuzzleComplete = useCallback(() => {
+        const finalTime = Math.floor((Date.now() - gameState.startTime) / 1000);
+        setGameState(prev => ({
+            ...prev,
+            isCompleted: true,
+            timer: finalTime
+        }));
+
+        // Celebration animation
+        sceneState.pieces.forEach((piece, index) => {
+            gsap.to(piece.position, {
+                z: 0.5,
+                duration: 0.5,
+                delay: index * 0.05,
+                yoyo: true,
+                repeat: 1,
+                ease: "power2.inOut"
+            });
+
+            gsap.to(piece.rotation, {
+                z: Math.PI * 2,
+                duration: 1,
+                delay: index * 0.05,
+                ease: "power2.inOut"
+            });
+        });
+    }, [gameState.startTime, sceneState.pieces]);
+
+    // Initialize game
+    const startGame = useCallback(() => {
+        if (!gameState.imageUrl) return;
+
+        setGameState(prev => ({
+            ...prev,
+            isStarted: true,
+            startTime: Date.now(),
+            timer: 0,
+            isCompleted: false,
+            progress: 0
+        }));
+
+        // Start timer
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+        }
+
+        timerRef.current = setInterval(() => {
+            setGameState(prev => ({
+                ...prev,
+                timer: Math.floor((Date.now() - prev.startTime) / 1000)
+            }));
+        }, 1000);
+    }, [gameState.imageUrl]);
+
+    // Handle image upload
+    const handleImageUpload = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        try {
+            setUi(prev => ({ ...prev, loading: true, error: null }));
+
+            if (file.size > MAX_IMAGE_SIZE) {
+                throw new Error('Image must be smaller than 5MB');
+            }
+
+            if (!file.type.startsWith('image/')) {
+                throw new Error('File must be an image');
+            }
+
+            const imageUrl = URL.createObjectURL(file);
+            const textureLoader = new THREE.TextureLoader();
+            
+            const texture = await new Promise((resolve, reject) => {
+                textureLoader.load(
+                    imageUrl,
+                    resolve,
+                    undefined,
+                    reject
+                );
+            });
+
+            setGameState(prev => ({ ...prev, imageUrl }));
+            createPuzzlePieces(texture);
+
+        } catch (err) {
+            console.error('Image upload error:', err);
+            setUi(prev => ({
+                ...prev,
+                error: err.message || 'Failed to upload image'
+            }));
+        } finally {
+            setUi(prev => ({ ...prev, loading: false }));
+        }
+    };
+
+    // Effect hooks
+    useEffect(() => {
+        const cleanup = initScene();
+        return () => {
+            if (cleanup) cleanup();
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, [initScene]);
+
+    // Rotation handler
+    const handleRotate = useCallback(() => {
+        if (!sceneState.selectedPiece) return;
         
-        // Randomize initial position
-        piece.position.set(
-          (Math.random() - 0.5) * 30,
-          (Math.random() - 0.5) * 30,
-          0
-        );
+        gsap.to(sceneState.selectedPiece.rotation, {
+            z: sceneState.selectedPiece.rotation.z + Math.PI/2,
+            duration: 0.3,
+            ease: "power2.out",
+            onComplete: () => checkPiecePlacement(sceneState.selectedPiece)
+        });
+    }, [sceneState.selectedPiece, checkPiecePlacement]);
 
-        // Add to scene and pieces array
-        sceneRef.current.add(piece);
-        newPieces.push(piece);
-      }
-    }
+    // Reset camera
+    const resetCamera = useCallback(() => {
+        if (!cameraRef.current || !orbitControlsRef.current) return;
 
-    setScene3D(prev => ({
-      ...prev,
-      pieces: newPieces
-    }));
-  };
+        gsap.to(cameraRef.current.position, {
+            x: 0,
+            y: 0,
+            z: 5,
+            duration: 1,
+            ease: "power2.inOut"
+        });
 
-  // Initialize puzzle
-  const initializePuzzle = async () => {
-    if (!gameState.imageUrl) return;
+        gsap.to(orbitControlsRef.current.target, {
+            x: 0,
+            y: 0,
+            z: 0,
+            duration: 1,
+            ease: "power2.inOut"
+        });
+    }, []);
 
-    try {
-      setUi(prev => ({ ...prev, loading: true, error: null }));
-      
-      const startTime = Date.now();
-      await generate3DPuzzlePieces(gameState.imageUrl, gameState.difficulty);
-      
-      const updates = {
-        isGameStarted: true,
-        startTime,
-        timer: 0,
-        isCompleted: false
-      };
-      
-      await update(gameRef.current, updates);
-      
-      setGameState(prev => ({
-        ...prev,
-        startTime,
-        timer: 0,
-        isCompleted: false
-      }));
-      setIsGameStarted(true);
-      setUi(prev => ({ ...prev, loading: false }));
+    return (
+        <div className="flex flex-col h-screen bg-gray-100">
+            {/* Header */}
+            <div className="flex justify-between items-center px-6 py-4 bg-white shadow-md">
+                <h1 className="text-2xl font-bold text-gray-800">3D Photo Puzzle</h1>
+                <div className="flex items-center gap-4">
+                    <div className="text-lg font-semibold">
+                        Time: {Math.floor(gameState.timer / 60)}:
+                        {String(gameState.timer % 60).padStart(2, '0')}
+                    </div>
+                    <button
+                        onClick={resetCamera}
+                        className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                        title="Reset Camera"
+                    >
+                        <Home className="h-5 w-5" />
+                    </button>
+                </div>
+            </div>
 
-      initializeScene(); // Initialize the scene when the play button is pressed
+            {/* Main content */}
+            <div className="flex flex-1 overflow-hidden">
+                {/* Side panel */}
+                <div className="w-72 bg-white shadow-lg p-6 space-y-6 flex flex-col">
+                    {/* Thumbnail */}
+                    {ui.thumbnailUrl && (
+                        <div className="space-y-2">
+                            <h3 className="font-semibold text-gray-700">Reference Image</h3>
+                            <div className="relative rounded-lg overflow-hidden shadow-md">
+                                <img
+                                    src={ui.thumbnailUrl}
+                                    alt="Puzzle reference"
+                                    className="w-full object-cover"
+                                />
+                            </div>
+                        </div>
+                    )}
 
-      // Start the timer
-      const timerInterval = setInterval(() => {
-        setTimer(prev => prev + 1);
-      }, 1000);
+                    {/* Progress */}
+                    <div className="space-y-2">
+                        <h3 className="font-semibold text-gray-700">Progress</h3>
+                        <div className="h-4 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-green-500 transition-all duration-300 ease-out"
+                                style={{ width: `${gameState.progress}%` }}
+                            />
+                        </div>
+                        <div className="text-sm text-gray-600 text-center">
+                            {Math.round(gameState.progress)}% Complete
+                        </div>
+                    </div>
 
-      return () => clearInterval(timerInterval);
-      
-    } catch (err) {
-      console.error('Failed to initialize puzzle:', err);
-      setUi(prev => ({
-        ...prev,
-        loading: false,
-        error: { type: 'error', message: 'Failed to start game' }
-      }));
-    }
-  };
+                    {/* Controls */}
+                    {!gameState.imageUrl ? (
+                        <div className="flex-1 flex flex-col justify-center">
+                            <label className="flex flex-col items-center gap-4 p-8 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 transition-colors">
+                                <Camera className="h-12 w-12 text-gray-400" />
+                                <span className="text-sm text-gray-600">Upload an image to start</span>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleImageUpload}
+                                    className="hidden"
+                                />
+                            </label>
+                        </div>
+                    ) : !gameState.isStarted ? (
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-700">
+                                    Difficulty
+                                </label>
+                                <select
+                                    value={gameState.difficulty}
+                                    onChange={(e) => setGameState(prev => ({
+                                        ...prev,
+                                        difficulty: parseInt(e.target.value)
+                                    }))}
+                                    className="w-full px-3 py-2 border rounded-lg"
+                                >
+                                    {Array.from(
+                                        { length: MAX_DIFFICULTY - MIN_DIFFICULTY + 1 },
+                                        (_, i) => MIN_DIFFICULTY + i
+                                    ).map(level => (
+                                        <option key={level} value={level}>
+                                            {level}x{level} ({level * level} pieces)
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <button
+                                onClick={startGame}
+                                className="w-full bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors"
+                            >
+                                <Play className="h-4 w-4 inline mr-2" />
+                                Start Game
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <h3 className="font-semibold text-gray-700">Controls</h3>
+                                <ul className="text-sm text-gray-600 space-y-1">
+                                    <li>• Drag pieces to move</li>
+                                    <li>• Click to select</li>
+                                    <li>• R to rotate selected</li>
+                                    <li>• Mouse wheel to zoom</li>
+                                    <li>• Right click to orbit</li>
+                                </ul>
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={handleRotate}
+                                    disabled={!sceneState.selectedPiece}
+                                    className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+                                >
+                                    <RotateCw className="h-4 w-4 inline mr-2" />
+                                    Rotate
+                                </button>
+                                <button
+                                    onClick={resetCamera}
+                                    className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                                >
+                                    <Home className="h-4 w-4 inline mr-2" />
+                                    Reset View
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
 
+                {/* 3D View */}
+                <div className="flex-1 relative">
+                    <div
+                        ref={mountRef}
+                        className="w-full h-full bg-gradient-to-b from-gray-100 to-gray-200"
+                    />
 
-  // ... (previous code remains the same)
+                    {/* Loading overlay */}
+                    {ui.loading && (
+                        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+                            <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-white"></div>
+                        </div>
+                    )}
 
-  // Add camera controls
-  const handleCameraReset = useCallback(() => {
-    if (!scene3D.camera || !scene3D.controls) return;
-    
-    scene3D.camera.position.set(0, 0, 30);
-    scene3D.camera.lookAt(0, 0, 0);
-    scene3D.controls.reset();
-  }, [scene3D]);
+                    {/* Error message */}
+                    {ui.error && (
+                        <div className="absolute top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg">
+                            {ui.error}
+                        </div>
+                    )}
+                </div>
+            </div>
 
-  const handleZoom = useCallback((direction) => {
-    if (!scene3D.camera) return;
-    
-    const zoomSpeed = 5;
-    const newZ = scene3D.camera.position.z + (direction === 'in' ? -zoomSpeed : zoomSpeed);
-    scene3D.camera.position.z = THREE.MathUtils.clamp(newZ, 10, 50);
-  }, [scene3D]);
-
-  const handleRotate = useCallback((direction) => {
-    if (!scene3D.selectedPiece) return;
-
-    const angle = direction === 'cw' ? Math.PI / 2 : -Math.PI / 2;
-    scene3D.selectedPiece.rotation.z += angle;
-  }, [scene3D]);
-
-  // Add share functionality
-  const handleShare = useCallback(async () => {
-    try {
-      const canvas = await html2canvas(mountRef.current);
-      const dataUrl = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.href = dataUrl;
-      link.download = 'puzzle.png';
-      link.click();
-    } catch (err) {
-      console.error('Failed to share puzzle:', err);
-      setUi(prev => ({
-        ...prev,
-        error: { type: 'error', message: 'Failed to share puzzle' }
-      }));
-    }
-  }, []);
-
-  // Component rendering
-  return (
-    <div className="flex flex-col gap-4 p-4 bg-white rounded-lg shadow-lg max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b pb-4">
-        <h1 className="text-2xl font-bold">3D Photo Puzzle</h1>
-        <p>Welcome {user.name}</p>
-        <div className="text-lg font-semibold">
-          {`Time: ${String(Math.floor(timer / 60)).padStart(2, '0')}:${String(timer % 60).padStart(2, '0')}`}
+            {/* Completion modal */}
+            {gameState.isCompleted && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white p-8 rounded-xl shadow-2xl max-w-md w-full">
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">
+                            Puzzle Completed! 🎉
+                        </h2>
+                        <p className="text-gray-600 mb-6">
+                            Time: {Math.floor(gameState.timer / 60)}:
+                            {String(gameState.timer % 60).padStart(2, '0')}
+                        </p>
+                        <div className="space-y-2">
+                            <button
+                                onClick={() => setUi(prev => ({ ...prev, showShareModal: true }))}
+                                className="w-full bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg transition-colors"
+                            >
+                                <Share2 className="h-4 w-4 inline mr-2" />
+                                Share Result
+                            </button>
+                            <button
+                                onClick={() => window.location.reload()}
+                                className="w-full border border-gray-300 hover:bg-gray-50 px-6 py-3 rounded-lg transition-colors"
+                            >
+                                Start New Puzzle
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => navigate('/')}
-            className="p-2 border rounded hover:bg-gray-100 text-gray-600"
-            title="Return Home"
-          >
-            <Home className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => navigate('/')}
-            className="p-2 border rounded hover:bg-red-50 text-red-600"
-            title="Leave Session"
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Game Controls */}
-      {!isGameStarted && (
-        <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-          <label htmlFor="difficulty" className="font-medium">
-            Puzzle Size: {gameState.difficulty}x{gameState.difficulty}
-          </label>
-          <input
-            type="range"
-            id="difficulty"
-            min="2"
-            max="8"
-            value={gameState.difficulty}
-            onChange={handleDifficultyChange}
-            className="flex-1"
-          />
-          <span className="text-sm text-gray-600">
-            ({gameState.difficulty * gameState.difficulty} pieces)
-          </span>
-        </div>
-      )}
-
-      {/* Relief Depth Controls */}
-      {!isGameStarted && (
-        <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-          <label htmlFor="reliefDepth" className="font-medium">
-            Relief Depth: {reliefDepth}
-          </label>
-          <input
-            type="range"
-            id="reliefDepth"
-            min="1"
-            max="10"
-            value={reliefDepth}
-            onChange={(e) => setReliefDepth(parseInt(e.target.value, 10))}
-            className="flex-1"
-          />
-          <span className="text-sm text-gray-600">
-            ({reliefDepth})
-          </span>
-        </div>
-      )}
-
-      {/* Camera Controls */}
-      <div className="flex gap-2 mt-4">
-        <button
-          onClick={() => handleZoom('out')}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Zoom Out"
-        >
-          <ZoomOut className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => handleZoom('in')}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Zoom In"
-        >
-          <ZoomIn className="h-4 w-4" />
-        </button>
-        <button
-          onClick={handleCameraReset}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Reset Camera"
-        >
-          <Camera className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => handleRotate('cw')}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Rotate Clockwise"
-        >
-          <RotateCw className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => handleRotate('ccw')}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Rotate Counterclockwise"
-        >
-          <RotateCcw className="h-4 w-4" />
-        </button>
-        {!isGameStarted && (
-          <button
-            onClick={initializePuzzle}
-            className="p-2 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={!gameState.imageUrl}
-            title="Start Game"
-          >
-            <Play className="h-4 w-4" />
-          </button>
-        )}
-        <button
-          onClick={handleShare}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Share Puzzle"
-        >
-          <Share2 className="h-4 w-4" />
-        </button>
-        <button
-          onClick={handleShare}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Download Puzzle"
-        >
-          <Download className="h-4 w-4" />
-        </button>
-        <button
-          onClick={saveGameProgress}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Save Game"
-        >
-          Save
-        </button>
-        <button
-          onClick={resumeGameProgress}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Resume Game"
-        >
-          Resume
-        </button>
-        <button
-          onClick={handleUndo}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Undo"
-        >
-          Undo
-        </button>
-        <button
-          onClick={handleRedo}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Redo"
-        >
-          Redo
-        </button>
-        <button
-          onClick={handleHint}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Hint"
-        >
-          Hint
-        </button>
-        <button
-          onClick={handlePieceGrouping}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Group Pieces"
-        >
-          Group
-        </button>
-        <select
-          value={viewPreset}
-          onChange={(e) => handleViewPresetChange(e.target.value)}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="View Preset"
-        >
-          <option value="default">Default</option>
-          <option value="top">Top View</option>
-          <option value="side">Side View</option>
-        </select>
-        <button
-          onClick={() => setShowExpectedResult(!showExpectedResult)}
-          className="p-2 border rounded hover:bg-gray-100"
-          title="Show Expected Result"
-        >
-          {showExpectedResult ? 'Hide' : 'Show'} Expected Result
-        </button>
-      </div>
-
-      {/* 3D Puzzle Container */}
-      <div 
-        ref={mountRef}
-        className="w-full aspect-square bg-gray-50 rounded-lg relative"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-      >
-        {!gameState.imageUrl && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
-              className="hidden"
-              id="imageUpload"
-            />
-            <label 
-              htmlFor="imageUpload"
-              className="cursor-pointer p-6 border-2 border-dashed rounded-lg text-center"
-            >
-              <p className="text-lg font-medium">Upload an image to create a 3D puzzle</p>
-              <p className="text-sm text-gray-500 mt-2">Click or drag an image here</p>
-            </label>
-          </div>
-        )}
-        {showExpectedResult && gameState.imageUrl && (
-          <img 
-            src={gameState.imageUrl} 
-            alt="Expected Result" 
-            className="absolute inset-0 w-full h-full object-cover opacity-50 pointer-events-none"
-          />
-        )}
-      </div>
-
-      {/* Progress Display */}
-      {isGameStarted && (
-        <div className="mt-4">
-          <div className="flex gap-4 text-sm">
-            <div>Total Pieces: {scene3D.pieces.length}</div>
-            <div>Correctly Placed: {scene3D.pieces.filter(p => p.isPlaced).length}</div>
-            <div>Remaining: {scene3D.pieces.length - scene3D.pieces.filter(p => p.isPlaced).length}</div>
-          </div>
-          <div className="mt-2">
-            <Bar 
-              data={{
-                labels: ['Progress'],
-                datasets: [{
-                  label: 'Completion',
-                  data: [progress],
-                  backgroundColor: 'rgba(75, 192, 192, 0.6)'
-                }]
-              }}
-              options={{
-                scales: {
-                  y: {
-                    beginAtZero: true,
-                    max: 100
-                  }
-                }
-              }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Error Messages */}
-      {ui.error && (
-        <div 
-          className={`p-3 rounded ${
-            ui.error.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
-          }`}
-          role="alert"
-        >
-          {ui.error.message}
-        </div>
-      )}
-
-      {/* Share Modal */}
-      {showShareModal && <ShareModal />}
-    </div>
-  );
+    );
 };
 
-export default Custom3DPuzzle;
+export default PhotoPuzzle3D;

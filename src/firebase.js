@@ -2,6 +2,10 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+// import { getDatabase, ref, set, onValue, update } from 'firebase/database';
+import { getDatabase, ref, set, onValue, update, remove, onDisconnect, push } from 'firebase/database';
+import { nanoid } from 'nanoid';
+
 
 const firebaseConfig = {
     apiKey: "AIzaSyAuzyxG9Cs1ma9chjR-uJZegoMAc1Vp2Ig",
@@ -21,14 +25,10 @@ const googleProvider = new GoogleAuthProvider();
 const storage = getStorage(app);
 // After Firebase initialization
 const db = getFirestore(app);
-
-
-export { auth, googleProvider, storage, app, db };
-
-// firebaseConfig.js
+const database = getDatabase(app);
 
 
 
-
+export { auth, googleProvider, storage, app,remove,push, db, database, onDisconnect,  ref, set, onValue, update, nanoid };
 
 

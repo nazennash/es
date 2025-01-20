@@ -11,10 +11,10 @@ import {
 } from 'lucide-react';
 import { 
   getDatabase, ref, set, onValue, update, remove, 
-  onDisconnect, push, get 
+  onDisconnect, push, get, serverTimestamp 
 } from 'firebase/database';
 
-// Player cursor visualization
+// Player cursor visualization class
 class PlayerCursor extends THREE.Mesh {
   constructor(color) {
     const geometry = new THREE.RingGeometry(0.1, 0.12, 32);
@@ -71,17 +71,16 @@ const puzzlePieceShader = {
   `
 };
 
-const MultiplayerPuzzleGame = (props) => {
-  // User Authentication Setup
+const MultiplayerPuzzleGame = ({ gameId: propGameId, isHost }) => {
+  // Get authenticated user data
   const userData = JSON.parse(localStorage.getItem('authUser'));
   const user = {
-    id: userData?.uid || `user-${Date.now()}`,
-    name: userData?.displayName || userData?.email || `Player ${Math.floor(Math.random() * 1000)}`
+    id: userData?.uid || `user-${nanoid()}`,
+    name: userData?.displayName || userData?.email || `Player ${nanoid(4)}`
   };
 
-
-  // Game State
-  const [gameState, setGameState] = useState('initial');
+  // Game state
+  const [gameState, setGameState] = useState('initial'); // initial, waiting, playing, paused, completed
   const [image, setImage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -93,15 +92,12 @@ const MultiplayerPuzzleGame = (props) => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [showThumbnail, setShowThumbnail] = useState(false);
-  const [localPlayerId, setLocalPlayerId] = useState(null);
-  const [playerName, setPlayerName] = useState(user.name);
 
-  // Game Configuration
-  const gameId = props.gameId;
-  const isHost = props.isHost;
+  // Game configuration
+  const gameId = propGameId || nanoid(6);
   const database = getDatabase();
 
-  // Three.js References
+  // Three.js references
   const containerRef = useRef(null);
   const sceneRef = useRef(null);
   const cameraRef = useRef(null);
@@ -114,47 +110,169 @@ const MultiplayerPuzzleGame = (props) => {
   const playerCursorsRef = useRef({});
   const guideOutlinesRef = useRef([]);
 
-  // Utility Functions
+  // Utility functions
   const formatTime = useCallback((seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }, []);
 
-
-  // Game Initialization Effect
-  useEffect(() => {
+  // Piece synchronization
+  const syncPiecePosition = useCallback((piece) => {
     if (!gameId || !user.id) return;
 
-    const gameRef = ref(database, `games/${gameId}`);
-    const playerRef = ref(database, `games/${gameId}/players/${user.id}`);
+    const pieceRef = ref(database, `games/${gameId}/pieces/${piece.userData.id}`);
+    set(pieceRef, {
+      position: {
+        x: piece.position.x,
+        y: piece.position.y,
+        z: piece.position.z
+      },
+      rotation: piece.rotation.z,
+      isPlaced: piece.userData.isPlaced,
+      lastMovedBy: user.id,
+      lastMoveTime: serverTimestamp(),
+      lastMovedByName: user.name
+    });
+  }, [gameId, user, database]);
 
-    const setupGame = async () => {
-      // Set initial game state for host
-      if (isHost) {
-        await set(gameRef, {
-          state: 'waiting',
-          createdAt: Date.now(),
-          settings: { difficulty: 'medium' },
-          creator: { id: user.id, name: user.name }
+  // Create placement guides
+  const createPlacementGuides = useCallback((gridSize, pieceSize) => {
+    guideOutlinesRef.current.forEach(guide => sceneRef.current?.remove(guide));
+    guideOutlinesRef.current = [];
+
+    for (let y = 0; y < gridSize.y; y++) {
+      for (let x = 0; x < gridSize.x; x++) {
+        const outlineGeometry = new THREE.EdgesGeometry(
+          new THREE.PlaneGeometry(pieceSize.x * 0.95, pieceSize.y * 0.95)
+        );
+        const outlineMaterial = new THREE.LineBasicMaterial({ 
+          color: 0x4a90e2,
+          transparent: true,
+          opacity: 0.5
         });
+        const outline = new THREE.LineSegments(outlineGeometry, outlineMaterial);
+
+        outline.position.x = (x - gridSize.x / 2 + 0.5) * pieceSize.x;
+        outline.position.y = (y - gridSize.y / 2 + 0.5) * pieceSize.y;
+        outline.position.z = -0.01;
+
+        sceneRef.current?.add(outline);
+        guideOutlinesRef.current.push(outline);
+      }
+    }
+  }, []);
+
+  // Puzzle piece creation
+  const createPuzzlePieces = useCallback(async (imageUrl) => {
+    if (!sceneRef.current) return;
+
+    // Clear existing pieces
+    puzzlePiecesRef.current.forEach(piece => {
+      sceneRef.current.remove(piece);
+    });
+    puzzlePiecesRef.current = [];
+
+    // Load image texture
+    const texture = await new THREE.TextureLoader().loadAsync(imageUrl);
+    const aspectRatio = texture.image.width / texture.image.height;
+    
+    // Grid setup
+    const gridSize = { x: 4, y: 3 };
+    const pieceSize = {
+      x: 1 * aspectRatio / gridSize.x,
+      y: 1 / gridSize.y
+    };
+
+    setTotalPieces(gridSize.x * gridSize.y);
+    createPlacementGuides(gridSize, pieceSize);
+
+    // Create pieces
+    for (let y = 0; y < gridSize.y; y++) {
+      for (let x = 0; x < gridSize.x; x++) {
+        const geometry = new THREE.PlaneGeometry(
+          pieceSize.x * 0.95,
+          pieceSize.y * 0.95
+        );
+
+        const material = new THREE.ShaderMaterial({
+          uniforms: {
+            map: { value: texture },
+            uvOffset: { value: new THREE.Vector2(x / gridSize.x, y / gridSize.y) },
+            uvScale: { value: new THREE.Vector2(1 / gridSize.x, 1 / gridSize.y) },
+            selected: { value: 0.0 },
+            correctPosition: { value: 0.0 },
+            time: { value: 0.0 }
+          },
+          vertexShader: puzzlePieceShader.vertexShader,
+          fragmentShader: puzzlePieceShader.fragmentShader,
+          side: THREE.DoubleSide
+        });
+
+        const piece = new THREE.Mesh(geometry, material);
+        
+        // Initial position
+        piece.position.x = (x - gridSize.x / 2 + 0.5) * pieceSize.x;
+        piece.position.y = (y - gridSize.y / 2 + 0.5) * pieceSize.y;
+        piece.position.z = 0;
+
+        // Metadata
+        piece.userData = {
+          originalPosition: piece.position.clone(),
+          gridPosition: { x, y },
+          isPlaced: false,
+          id: `piece_${x}_${y}`
+        };
+
+        sceneRef.current.add(piece);
+        puzzlePiecesRef.current.push(piece);
+      }
+    }
+
+    // Scramble pieces
+    puzzlePiecesRef.current.forEach(piece => {
+      piece.position.x += (Math.random() - 0.5) * 2;
+      piece.position.y += (Math.random() - 0.5) * 2;
+      piece.position.z += Math.random() * 0.5;
+      piece.rotation.z = (Math.random() - 0.5) * Math.PI / 2;
+
+      syncPiecePosition(piece);
+    });
+  }, [createPlacementGuides, syncPiecePosition]);
+
+  // Join existing game
+  const joinExistingGame = useCallback(async () => {
+    if (!gameId || !user.id) return;
+
+    try {
+      const gameRef = ref(database, `games/${gameId}`);
+      const gameSnapshot = await get(gameRef);
+      
+      if (!gameSnapshot.exists()) {
+        console.error('Game not found');
+        return;
       }
 
-      // Set up player
-      await set(playerRef, {
+      const gameData = gameSnapshot.val();
+      
+      // Add player to game
+      const playerRef = ref(database, `games/${gameId}/players/${user.id}`);
+      const playerData = {
         id: user.id,
         name: user.name,
         color: `hsl(${Math.random() * 360}, 70%, 50%)`,
-        joinedAt: Date.now(),
+        joinedAt: serverTimestamp(),
         isAuthenticated: !!userData,
-        lastActive: Date.now(),
-        stats: { piecesPlaced: 0 }
-      });
+        isHost: false,
+        stats: {
+          piecesPlaced: 0,
+          lastActive: serverTimestamp()
+        }
+      };
+      
+      await set(playerRef, playerData);
 
-      // Handle disconnection
-      onDisconnect(playerRef).remove();
-
-      // Set up presence system
+      // Set up presence
       const presenceRef = ref(database, `.info/connected`);
       onValue(presenceRef, (snapshot) => {
         if (snapshot.val()) {
@@ -167,48 +285,218 @@ const MultiplayerPuzzleGame = (props) => {
         }
       });
 
-      // If joining existing game
-      if (!isHost) {
-        const gameSnapshot = await get(gameRef);
-        if (gameSnapshot.exists()) {
-          const gameData = gameSnapshot.val();
-          if (gameData.image) {
-            setImage(gameData.image);
-            await createPuzzlePieces(gameData.image);
-          }
-        }
+      // Clean up player data on disconnect
+      onDisconnect(playerRef).remove();
+
+      // Handle existing game state
+      if (gameData.image) {
+        setImage(gameData.image);
+        await createPuzzlePieces(gameData.image);
       }
-    };
 
-    setupGame();
+      // Notify others
+      const messagesRef = ref(database, `games/${gameId}/messages`);
+      push(messagesRef, {
+        type: 'system',
+        text: `${user.name} joined the game`,
+        timestamp: serverTimestamp()
+      });
 
-    // Listen for game state changes
-    const unsubscribe = onValue(gameRef, (snapshot) => {
+      // Update game metadata
+      await update(gameRef, {
+        lastJoinedAt: serverTimestamp(),
+        playerCount: Object.keys(gameData.players || {}).length + 1
+      });
+
+    } catch (error) {
+      console.error('Error joining game:', error);
+    }
+  }, [gameId, user, database, createPuzzlePieces]);
+
+  // Initialize host game
+  const initializeHostGame = useCallback(async () => {
+    if (!gameId || !user.id) return;
+
+    try {
+      const gameRef = ref(database, `games/${gameId}`);
+      const playerRef = ref(database, `games/${gameId}/players/${user.id}`);
+
+      // Set initial game state
+      await set(gameRef, {
+        state: 'waiting',
+        createdAt: serverTimestamp(),
+        settings: { difficulty: 'medium' },
+        host: {
+          id: user.id,
+          name: user.name
+        }
+      });
+
+      // Set host player data
+      await set(playerRef, {
+        id: user.id,
+        name: user.name,
+        color: `hsl(${Math.random() * 360}, 70%, 50%)`,
+        joinedAt: serverTimestamp(),
+        isAuthenticated: !!userData,
+        isHost: true,
+        stats: {
+          piecesPlaced: 0,
+          lastActive: serverTimestamp()
+        }
+      });
+
+      // Set up presence and cleanup
+      const presenceRef = ref(database, `.info/connected`);
+      onValue(presenceRef, (snapshot) => {
+        if (snapshot.val()) {
+          const playerPresenceRef = ref(
+            database, 
+            `games/${gameId}/players/${user.id}/presence`
+          );
+          onDisconnect(playerPresenceRef).remove();
+          set(playerPresenceRef, true);
+        }
+      });
+
+      onDisconnect(playerRef).remove();
+
+    } catch (error) {
+      console.error('Error initializing game:', error);
+    }
+  }, [gameId, user, database]);
+
+  // Initialize game based on role
+  useEffect(() => {
+    if (isHost) {
+      initializeHostGame();
+    } else {
+      joinExistingGame();
+    }
+  }, [isHost, initializeHostGame, joinExistingGame]);
+
+  // Listen for game updates
+  useEffect(() => {
+    if (!gameId) return;
+
+    const gameRef = ref(database, `games/${gameId}`);
+    const playersRef = ref(database, `games/${gameId}/players`);
+    const piecesRef = ref(database, `games/${gameId}/pieces`);
+    const messagesRef = ref(database, `games/${gameId}/messages`);
+
+    // Game state listener
+    const gameUnsubscribe = onValue(gameRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         setGameState(data.state);
-        setPlayers(data.players || {});
-
-        // Handle player joins
-        const playerCount = Object.keys(data.players || {}).length;
-        if (playerCount > Object.keys(players).length && !isHost) {
-          const messagesRef = ref(database, `games/${gameId}/messages`);
-          push(messagesRef, {
-            type: 'system',
-            text: `${user.name} joined the game`,
-            timestamp: Date.now()
-          });
+        if (data.image && !image) {
+          setImage(data.image);
+          // createPuzzlePieces(data.image);
         }
       }
     });
 
-    return () => {
-      unsubscribe();
-      remove(playerRef);
-    };
-  }, [gameId, user.id, isHost, database]);
+    // Players listener
+    const playersUnsubscribe = onValue(playersRef, (snapshot) => {
+      const playersData = snapshot.val() || {};
+      setPlayers(playersData);
 
-  // Three.js Scene Setup Effect
+      // Update player cursors
+      Object.entries(playersData).forEach(([playerId, playerData]) => {
+        if (playerId !== user.id && playerData.cursor) {
+          if (!playerCursorsRef.current[playerId]) {
+            const cursor = new PlayerCursor(playerData.color);
+            sceneRef.current?.add(cursor);
+            playerCursorsRef.current[playerId] = cursor;
+          }
+          const cursor = playerCursorsRef.current[playerId];
+          if (cursor && playerData.cursor) {
+            cursor.position.set(
+              playerData.cursor.x,
+              playerData.cursor.y,
+              0.1
+            );
+          }
+        }
+      });
+    });
+
+    // Pieces listener
+    const piecesUnsubscribe = onValue(piecesRef, (snapshot) => {
+      const piecesData = snapshot.val() || {};
+      
+      // Update puzzle pieces positions
+      Object.entries(piecesData).forEach(([pieceId, pieceData]) => {
+        if (pieceData.lastMovedBy !== user.id) {
+          const piece = puzzlePiecesRef.current.find(p => p.userData.id === pieceId);
+          if (piece) {
+            piece.position.set(
+              pieceData.position.x,
+              pieceData.position.y,
+              pieceData.position.z
+            );
+            piece.rotation.z = pieceData.rotation;
+            piece.userData.isPlaced = pieceData.isPlaced;
+            
+            if (pieceData.isPlaced) {
+              piece.material.uniforms.correctPosition.value = 1.0;
+            }
+          }
+        }
+      });
+    });
+
+    // Messages listener
+    const messagesUnsubscribe = onValue(messagesRef, (snapshot) => {
+      const messagesData = snapshot.val() || {};
+      const messagesList = Object.values(messagesData)
+        .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      setMessages(messagesList);
+    });
+
+    // Cleanup
+    return () => {
+      gameUnsubscribe();
+      playersUnsubscribe();
+      piecesUnsubscribe();
+      messagesUnsubscribe();
+      
+      // Remove player cursors
+      Object.values(playerCursorsRef.current).forEach(cursor => {
+        sceneRef.current?.remove(cursor);
+      });
+      playerCursorsRef.current = {};
+    };
+  }, [gameId, user.id, database, image, createPuzzlePieces]);
+
+  useEffect(() => {
+    // Only create pieces when we have an image and haven't created them yet
+    if (image && puzzlePiecesRef.current.length === 0) {
+      createPuzzlePieces(image);
+    }
+  }, [image, createPuzzlePieces]);
+
+  // Cursor position sync
+  useEffect(() => {
+    if (!gameId || !user.id || !rendererRef.current) return;
+
+    const handleMouseMove = (event) => {
+      const rect = rendererRef.current.domElement.getBoundingClientRect();
+      const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      const cursorRef = ref(database, `games/${gameId}/players/${user.id}/cursor`);
+      set(cursorRef, { x, y, timestamp: serverTimestamp() });
+    };
+
+    rendererRef.current.domElement.addEventListener('mousemove', handleMouseMove);
+
+    return () => {
+      rendererRef.current?.domElement.removeEventListener('mousemove', handleMouseMove);
+    };
+  }, [gameId, user.id, database]);
+
+  // Scene initialization
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -242,7 +530,9 @@ const MultiplayerPuzzleGame = (props) => {
     composer.addPass(
       new UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),
-        0.5, 0.4, 0.85
+        0.5,
+        0.4,
+        0.85
       )
     );
     composerRef.current = composer;
@@ -257,11 +547,19 @@ const MultiplayerPuzzleGame = (props) => {
     const animate = () => {
       requestAnimationFrame(animate);
       controls.update();
+      
+      // Update uniforms
+      puzzlePiecesRef.current.forEach(piece => {
+        if (piece.material.uniforms) {
+          piece.material.uniforms.time.value = clockRef.current.getElapsedTime();
+        }
+      });
+      
       composer.render();
     };
     animate();
 
-    // Handle window resize
+    // Window resize handler
     const handleResize = () => {
       const width = containerRef.current.clientWidth;
       const height = containerRef.current.clientHeight;
@@ -282,209 +580,26 @@ const MultiplayerPuzzleGame = (props) => {
     };
   }, []);
 
-  // Game State Management Effect (combines timer and game state)
+  // Timer effect
   useEffect(() => {
     let interval;
     if (gameState === 'playing' && isTimerRunning) {
       interval = setInterval(() => {
         setTimeElapsed(prev => prev + 1);
         
-        // Update last active timestamp
+        // Update player activity
         if (gameId && user.id) {
-          update(ref(database, `games/${gameId}/players/${user.id}`), {
-            lastActive: Date.now()
+          update(ref(database, `games/${gameId}/players/${user.id}/stats`), {
+            lastActive: serverTimestamp()
           });
         }
       }, 1000);
     }
 
     return () => clearInterval(interval);
-  }, [gameState, isTimerRunning, gameId, user.id]);
+  }, [gameState, isTimerRunning, gameId, user.id, database]);
 
-  // Piece Synchronization
-const syncPiecePosition = useCallback((piece) => {
-  if (!gameId || !user.id) return;
-
-  const pieceRef = ref(database, `games/${gameId}/pieces/${piece.userData.id}`);
-  set(pieceRef, {
-    position: {
-      x: piece.position.x,
-      y: piece.position.y,
-      z: piece.position.z
-    },
-    rotation: piece.rotation.z,
-    isPlaced: piece.userData.isPlaced,
-    lastMovedBy: user.id,
-    lastMoveTime: Date.now(),
-    lastMovedByName: user.name
-  });
-}, [gameId, user, database]);
-
-// Create placement guides
-  const createPlacementGuides = useCallback((gridSize, pieceSize) => {
-    guideOutlinesRef.current.forEach(guide => sceneRef.current.remove(guide));
-    guideOutlinesRef.current = [];
-
-    for (let y = 0; y < gridSize.y; y++) {
-      for (let x = 0; x < gridSize.x; x++) {
-        const outlineGeometry = new THREE.EdgesGeometry(
-          new THREE.PlaneGeometry(pieceSize.x * 0.95, pieceSize.y * 0.95)
-        );
-        const outlineMaterial = new THREE.LineBasicMaterial({ 
-          color: 0x4a90e2,
-          transparent: true,
-          opacity: 0.5
-        });
-        const outline = new THREE.LineSegments(outlineGeometry, outlineMaterial);
-
-        outline.position.x = (x - gridSize.x / 2 + 0.5) * pieceSize.x;
-        outline.position.y = (y - gridSize.y / 2 + 0.5) * pieceSize.y;
-        outline.position.z = -0.01;
-
-        sceneRef.current.add(outline);
-        guideOutlinesRef.current.push(outline);
-      }
-    }
-  }, []);
-
-// Puzzle piece creation
-const createPuzzlePieces = useCallback(async (imageUrl) => {
-  if (!sceneRef.current) return;
-
-  // Clear existing pieces
-  puzzlePiecesRef.current.forEach(piece => {
-    sceneRef.current.remove(piece);
-  });
-  puzzlePiecesRef.current = [];
-
-  // Load image texture
-  const texture = await new THREE.TextureLoader().loadAsync(imageUrl);
-  const aspectRatio = texture.image.width / texture.image.height;
-  
-  // Grid setup
-  const gridSize = { x: 4, y: 3 }; // Default medium difficulty
-  const pieceSize = {
-    x: 1 * aspectRatio / gridSize.x,
-    y: 1 / gridSize.y
-  };
-
-  setTotalPieces(gridSize.x * gridSize.y);
-  createPlacementGuides(gridSize, pieceSize);
-
-  // Create pieces
-  for (let y = 0; y < gridSize.y; y++) {
-    for (let x = 0; x < gridSize.x; x++) {
-      const geometry = new THREE.PlaneGeometry(
-        pieceSize.x * 0.95,
-        pieceSize.y * 0.95
-      );
-
-      const material = new THREE.ShaderMaterial({
-        uniforms: {
-          map: { value: texture },
-          uvOffset: { value: new THREE.Vector2(x / gridSize.x, y / gridSize.y) },
-          uvScale: { value: new THREE.Vector2(1 / gridSize.x, 1 / gridSize.y) },
-          selected: { value: 0.0 },
-          correctPosition: { value: 0.0 },
-          time: { value: 0.0 }
-        },
-        vertexShader: puzzlePieceShader.vertexShader,
-        fragmentShader: puzzlePieceShader.fragmentShader,
-        side: THREE.DoubleSide
-      });
-
-      const piece = new THREE.Mesh(geometry, material);
-      
-      // Set initial position
-      piece.position.x = (x - gridSize.x / 2 + 0.5) * pieceSize.x;
-      piece.position.y = (y - gridSize.y / 2 + 0.5) * pieceSize.y;
-      piece.position.z = 0;
-
-      // Store metadata
-      piece.userData = {
-        originalPosition: piece.position.clone(),
-        gridPosition: { x, y },
-        isPlaced: false,
-        id: `piece_${x}_${y}`
-      };
-
-      sceneRef.current.add(piece);
-      puzzlePiecesRef.current.push(piece);
-    }
-  }
-
-  // Scramble pieces
-  puzzlePiecesRef.current.forEach(piece => {
-    piece.position.x += (Math.random() - 0.5) * 2;
-    piece.position.y += (Math.random() - 0.5) * 2;
-    piece.position.z += Math.random() * 0.5;
-    piece.rotation.z = (Math.random() - 0.5) * Math.PI / 2;
-
-    // Sync initial positions in multiplayer
-    syncPiecePosition(piece);
-  });
-}, [createPlacementGuides, syncPiecePosition]);
-
-// Join existing game helper
-const joinExistingGame = useCallback(async () => {
-  if (!gameId || !user.id) return;
-
-  try {
-    const gameRef = ref(database, `games/${gameId}`);
-    const gameSnapshot = await get(gameRef);
-    
-    if (!gameSnapshot.exists()) {
-      console.error('Game not found');
-      return;
-    }
-
-    const gameData = gameSnapshot.val();
-    
-    // Add new player to the game
-    const playerRef = ref(database, `games/${gameId}/players/${user.id}`);
-    await set(playerRef, {
-      id: user.id,
-      name: user.name,
-      color: `hsl(${Math.random() * 360}, 70%, 50%)`,
-      joinedAt: Date.now(),
-      isAuthenticated: !!userData,
-      stats: {
-        piecesPlaced: 0,
-        lastActive: Date.now()
-      }
-    });
-
-    // Set up presence system for new player
-    const presenceRef = ref(database, `.info/connected`);
-    onValue(presenceRef, (snapshot) => {
-      if (snapshot.val()) {
-        const playerPresenceRef = ref(
-          database, 
-          `games/${gameId}/players/${user.id}/presence`
-        );
-        onDisconnect(playerPresenceRef).remove();
-        set(playerPresenceRef, true);
-      }
-    });
-
-    // If the game is already in progress, sync the current state
-    if (gameData.image) {
-      setImage(gameData.image);
-      await createPuzzlePieces(gameData.image);
-    }
-
-    // Update game metadata
-    await update(ref(database, `games/${gameId}`), {
-      lastJoinedAt: Date.now(),
-      playerCount: (gameData.playerCount || 0) + 1
-    });
-
-  } catch (error) {
-    console.error('Error joining game:', error);
-  }
-}, [gameId, user, database, createPuzzlePieces]);
-
-  // Piece Movement Effect
+  // Mouse interaction handlers
   useEffect(() => {
     if (!rendererRef.current) return;
 
@@ -541,32 +656,25 @@ const joinExistingGame = useCallback(async () => {
         piece.position.copy(originalPos);
         piece.rotation.z = 0;
         piece.userData.isPlaced = true;
-        piece.userData.placedBy = user.id;
 
-        updatePlayerStats(user.id, true);
         setCompletedPieces(prev => {
           const newCount = prev + 1;
           setProgress((newCount / totalPieces) * 100);
-          return newCount;
-        });
 
-        const pieceRef = ref(database, `games/${gameId}/pieces/${piece.userData.id}`);
-        set(pieceRef, {
-          position: {
-            x: originalPos.x,
-            y: originalPos.y,
-            z: originalPos.z
-          },
-          rotation: 0,
-          isPlaced: true,
-          placedBy: user.id,
-          placedAt: Date.now()
+          // Check if puzzle is completed
+          if (newCount === totalPieces) {
+            update(ref(database, `games/${gameId}`), {
+              state: 'completed',
+              completedAt: serverTimestamp()
+            });
+          }
+
+          return newCount;
         });
       }
 
       piece.material.uniforms.selected.value = 0.0;
-      piece.material.uniforms.correctPosition.value = 
-        piece.userData.isPlaced ? 1.0 : 0.0;
+      piece.material.uniforms.correctPosition.value = piece.userData.isPlaced ? 1.0 : 0.0;
 
       syncPiecePosition(piece);
       selectedPieceRef.current = null;
@@ -586,9 +694,8 @@ const joinExistingGame = useCallback(async () => {
       element.removeEventListener('mouseup', handleMouseUp);
       element.removeEventListener('mouseleave', handleMouseUp);
     };
-  }, [syncPiecePosition, totalPieces, gameId, user.id]);
+  }, [syncPiecePosition, totalPieces, gameId, database]);
 
-  // Game Controls
   const handleImageUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -615,102 +722,66 @@ const joinExistingGame = useCallback(async () => {
     reader.readAsDataURL(file);
   };
 
-  const togglePause = () => {
-    const newState = gameState === 'playing' ? 'paused' : 'playing';
-    setGameState(newState);
-    setIsTimerRunning(newState === 'playing');
-
-    if (gameId) {
-      update(ref(database, `games/${gameId}`), {
-        state: newState
-      });
-    }
-  };
-
-  const handleCopyGameLink = async () => {
-    try {
-      const currentUrl = window.location.origin;
-      const baseUrl = currentUrl.includes('github.io') 
-        ? `${currentUrl}/${window.location.pathname.split('/')[1]}` 
-        : currentUrl;
-      
-      const gameLink = `${baseUrl}/#/puzzle/multiplayer/${gameId}`;
-      await navigator.clipboard.writeText(gameLink);
-      console.log('Game link copied to clipboard!');
-    } catch (error) {
-      console.error('Failed to copy link:', error);
-      
-      // Fallback for browsers that don't support clipboard API
-      const textArea = document.createElement('textarea');
-      const gameLink = `${window.location.origin}/#/puzzle/multiplayer/${gameId}`;
-      textArea.value = gameLink;
-      document.body.appendChild(textArea);
-      textArea.select();
-      try {
-        document.execCommand('copy');
-        console.log('Game link copied to clipboard! (fallback)');
-      } catch (err) {
-        console.error('Fallback copying failed:', err);
-      }
-      document.body.removeChild(textArea);
-    }
-  };
-
-  // Camera Controls
   const handleZoomIn = () => {
-    if (cameraRef.current) {
-      cameraRef.current.position.z = Math.max(cameraRef.current.position.z - 1, 2);
-    }
-  };
+      if (cameraRef.current) {
+        cameraRef.current.position.z = Math.max(cameraRef.current.position.z - 1, 2);
+      }
+    };
+  
+    const handleZoomOut = () => {
+      if (cameraRef.current) {
+        cameraRef.current.position.z = Math.min(cameraRef.current.position.z + 1, 10);
+      }
+    };
+  
+    const handleResetView = () => {
+      if (cameraRef.current) {
+        cameraRef.current.position.set(0, 0, 5);
+        controlsRef.current?.target.set(0, 0, 0);
+        controlsRef.current?.update();
+      }
+    };
 
-  const handleZoomOut = () => {
-    if (cameraRef.current) {
-      cameraRef.current.position.z = Math.min(cameraRef.current.position.z + 1, 10);
-    }
-  };
+    const handleCopyGameLink = async () => {
+      try {
+        const currentUrl = window.location.origin;
+        const baseUrl = currentUrl.includes('github.io') 
+          ? `${currentUrl}/${window.location.pathname.split('/')[1]}` 
+          : currentUrl;
+        
+        const gameLink = `${baseUrl}/#/puzzle/multiplayer/${gameId}`;
+        await navigator.clipboard.writeText(gameLink);
+        console.log('Game link copied to clipboard!');
+      } catch (error) {
+        console.error('Failed to copy link:', error);
+        
+        // Fallback for browsers that don't support clipboard API
+        const textArea = document.createElement('textarea');
+        const gameLink = `${window.location.origin}/#/puzzle/multiplayer/${gameId}`;
+        textArea.value = gameLink;
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          console.log('Game link copied to clipboard! (fallback)');
+        } catch (err) {
+          console.error('Fallback copying failed:', err);
+        }
+        document.body.removeChild(textArea);
+      }
+    };
 
-  const handleResetView = () => {
-    if (cameraRef.current) {
-      cameraRef.current.position.set(0, 0, 5);
-      controlsRef.current?.target.set(0, 0, 0);
-      controlsRef.current?.update();
-    }
-  };
-
-  // Chat Functionality
-  const sendMessage = () => {
-    if (!newMessage.trim() || !gameId) return;
-
-    const messagesRef = ref(database, `games/${gameId}/messages`);
-    push(messagesRef, {
-      text: newMessage.trim(),
-      playerId: user.id,
-      playerName: user.name,
-      timestamp: Date.now()
-    });
-
-    setNewMessage('');
-  };
-
-  // Player Stats Updates
-  const updatePlayerStats = useCallback((playerId, isPlaced) => {
-    if (!gameId) return;
-
-    const statsRef = ref(database, `games/${gameId}/players/${playerId}/stats`);
-    const timestamp = Date.now();
-
-    get(statsRef).then((snapshot) => {
-      const currentStats = snapshot.val() || { piecesPlaced: 0 };
-      const newPiecesPlaced = isPlaced 
-        ? currentStats.piecesPlaced + 1 
-        : Math.max(0, currentStats.piecesPlaced - 1);
-
-      update(statsRef, {
-        piecesPlaced: newPiecesPlaced,
-        lastActive: timestamp
-      });
-    });
-  }, [gameId, database]);
+    const togglePause = () => {
+        const newState = gameState === 'playing' ? 'paused' : 'playing';
+        setGameState(newState);
+        setIsTimerRunning(newState === 'playing');
+    
+        if (gameId) {
+          update(ref(database, `games/${gameId}`), {
+            state: newState
+          });
+        }
+      };
 
   
 

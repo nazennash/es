@@ -4,8 +4,30 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
-import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image } from 'lucide-react';
+// import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image } from 'lucide-react';
+// import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, 
+//   Play, Pause, Users, Link, Copy } from 'lucide-react';
+import { 
+    Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, 
+    Play, Pause, Users, Link, Copy, MessageCircle, CheckCircle2, Trophy
+  } from 'lucide-react';
+import { database, ref, set, onValue, update, nanoid } from '../firebase';
 // import { Camera, Check, Info, Clock, Trophy, Settings, Volume2, VolumeX } from 'lucide-react';
+
+// Player cursor visualization
+class PlayerCursor extends THREE.Mesh {
+  constructor(color) {
+    const geometry = new THREE.RingGeometry(0.1, 0.12, 32);
+    const material = new THREE.MeshBasicMaterial({ 
+      color, 
+      transparent: true, 
+      opacity: 0.7,
+      side: THREE.DoubleSide 
+    });
+    super(geometry, material);
+    this.renderOrder = 999; // Ensure cursor renders on top
+  }
+}
 
 // Difficulty presets
 const DIFFICULTY_SETTINGS = {
@@ -306,6 +328,178 @@ const PuzzleGame = () => {
   const [showThumbnail, setShowThumbnail] = useState(false);
   const defaultCameraPosition = { x: 0, y: 0, z: 5 };
   const defaultControlsTarget = new THREE.Vector3(0, 0, 0);
+
+  const [gameState, setGameState] = useState('initial'); // 'initial', 'playing', 'paused'
+  const [isMultiplayer, setIsMultiplayer] = useState(false);
+  const [gameId, setGameId] = useState(null);
+  const [players, setPlayers] = useState({});
+  const [localPlayerId] = useState(nanoid());
+
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [playerCursors, setPlayerCursors] = useState({});
+  const [playerStats, setPlayerStats] = useState({});
+  const [playerName, setPlayerName] = useState('');
+  const [isReady, setIsReady] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const chatRef = useRef(null);
+  const playerColors = useRef({});
+
+  /// multip-player
+
+  // Generate random color for player
+  const getPlayerColor = useCallback((playerId) => {
+    if (!playerColors.current[playerId]) {
+      const hue = Math.random() * 360;
+      playerColors.current[playerId] = `hsl(${hue}, 70%, 50%)`;
+    }
+    return playerColors.current[playerId];
+  }, []);
+
+  // Enhanced multiplayer initialization
+  const initializeMultiplayerGame = async (gameId, isHost = false) => {
+    if (!playerName) {
+      const name = prompt('Enter your name:') || 'Player ' + nanoid(4);
+      setPlayerName(name);
+    }
+
+    const playerData = {
+      id: localPlayerId,
+      name: playerName || 'Player ' + nanoid(4),
+      color: getPlayerColor(localPlayerId),
+      isReady: false,
+      stats: {
+        piecesPlaced: 0,
+        lastActive: Date.now()
+      }
+    };
+
+    if (isHost) {
+      await set(ref(database, `games/${gameId}`), {
+        state: 'waiting',
+        host: localPlayerId,
+        settings: {
+          difficulty: 'medium',
+          allowRotation: true,
+          timeLimit: null
+        },
+        players: {
+          [localPlayerId]: playerData
+        },
+        created: Date.now()
+      });
+    } else {
+      await update(ref(database, `games/${gameId}/players`), {
+        [localPlayerId]: playerData
+      });
+    }
+
+    // Set up presence system
+    const presenceRef = ref(database, `.info/connected`);
+    onValue(presenceRef, (snapshot) => {
+      if (snapshot.val()) {
+        const playerPresenceRef = ref(database, `games/${gameId}/players/${localPlayerId}/presence`);
+        onDisconnect(playerPresenceRef).remove();
+        set(playerPresenceRef, true);
+      }
+    });
+  };
+
+  // Enhanced piece movement sync
+  const syncPieceMovement = useCallback((piece, position, isPlaced = false) => {
+    if (!isMultiplayer || !gameId) return;
+
+    const pieceRef = ref(database, `games/${gameId}/pieces/${piece.userData.id}`);
+    const timestamp = Date.now();
+
+    set(pieceRef, {
+      position: [position.x, position.y, position.z],
+      rotation: piece.rotation.z,
+      isPlaced,
+      lastUpdated: timestamp,
+      playerId: localPlayerId,
+      playerName: playerName
+    });
+
+    // Update player stats
+    if (isPlaced) {
+      const statsRef = ref(database, `games/${gameId}/players/${localPlayerId}/stats`);
+      update(statsRef, {
+        piecesPlaced: (playerStats[localPlayerId]?.piecesPlaced || 0) + 1,
+        lastActive: timestamp
+      });
+    }
+  }, [gameId, isMultiplayer, localPlayerId, playerName, playerStats]);
+
+  // Chat functionality
+  const sendMessage = () => {
+    if (!newMessage.trim() || !gameId) return;
+
+    const messageRef = ref(database, `games/${gameId}/messages`);
+    const timestamp = Date.now();
+
+    push(messageRef, {
+      text: newMessage.trim(),
+      playerId: localPlayerId,
+      playerName: playerName,
+      playerColor: getPlayerColor(localPlayerId),
+      timestamp
+    });
+
+    setNewMessage('');
+  };
+
+  // Mouse position sync for cursors
+  const syncMousePosition = useCallback((event) => {
+    if (!isMultiplayer || !gameId || !containerRef.current) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    const cursorRef = ref(database, `games/${gameId}/cursors/${localPlayerId}`);
+    set(cursorRef, {
+      position: { x, y },
+      playerName,
+      color: getPlayerColor(localPlayerId),
+      timestamp: Date.now()
+    });
+  }, [gameId, isMultiplayer, localPlayerId, playerName, getPlayerColor]);
+
+  // Update player cursors
+  useEffect(() => {
+    if (!isMultiplayer || !gameId) return;
+
+    const cursorsRef = ref(database, `games/${gameId}/cursors`);
+    return onValue(cursorsRef, (snapshot) => {
+      const cursors = snapshot.val() || {};
+      Object.entries(cursors).forEach(([playerId, cursorData]) => {
+        if (playerId !== localPlayerId) {
+          // Remove stale cursors (inactive for more than 5 seconds)
+          if (Date.now() - cursorData.timestamp > 5000) {
+            remove(ref(database, `games/${gameId}/cursors/${playerId}`));
+            return;
+          }
+
+          if (!playerCursors[playerId]) {
+            const cursor = new PlayerCursor(cursorData.color);
+            sceneRef.current.add(cursor);
+            setPlayerCursors(prev => ({ ...prev, [playerId]: cursor }));
+          }
+
+          const cursor = playerCursors[playerId];
+          if (cursor) {
+            cursor.position.set(
+              cursorData.position.x * 5, // Scale to match scene size
+              cursorData.position.y * 5,
+              1
+            );
+          }
+        }
+      });
+    });
+  }, [gameId, isMultiplayer, localPlayerId, playerCursors]);
+  
   
   // Three.js references
   const sceneRef = useRef(null);
@@ -741,6 +935,112 @@ const PuzzleGame = () => {
     reader.readAsDataURL(file);
   };
 
+
+  // added at 21.59
+  // Game state management
+  const startGame = () => {
+    setGameState('playing');
+    setIsTimerRunning(true);
+  };
+
+  const togglePause = () => {
+    if (gameState === 'playing') {
+      setGameState('paused');
+      setIsTimerRunning(false);
+      if (isMultiplayer) {
+        updateGameState({ state: 'paused' });
+      }
+    } else if (gameState === 'paused') {
+      setGameState('playing');
+      setIsTimerRunning(true);
+      if (isMultiplayer) {
+        updateGameState({ state: 'playing' });
+      }
+    }
+  };
+
+  // Multiplayer functions
+  const createMultiplayerGame = async () => {
+    const newGameId = nanoid(6);
+    setGameId(newGameId);
+    setIsMultiplayer(true);
+
+    const gameRef = ref(database, `games/${newGameId}`);
+    await set(gameRef, {
+      state: 'initial',
+      image: image,
+      players: {
+        [localPlayerId]: {
+          id: localPlayerId,
+          pieces: []
+        }
+      },
+      created: Date.now()
+    });
+
+    // Copy game link to clipboard
+    const gameLink = `${window.location.origin}/puzzle/${newGameId}`;
+    navigator.clipboard.writeText(gameLink);
+  };
+
+  const joinMultiplayerGame = async (joinGameId) => {
+    setGameId(joinGameId);
+    setIsMultiplayer(true);
+
+    const gameRef = ref(database, `games/${joinGameId}/players/${localPlayerId}`);
+    await set(gameRef, {
+      id: localPlayerId,
+      pieces: []
+    });
+  };
+
+  // Firebase real-time updates
+  useEffect(() => {
+    if (!isMultiplayer || !gameId) return;
+
+    const gameRef = ref(database, `games/${gameId}`);
+    const unsubscribe = onValue(gameRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      // Update game state
+      setGameState(data.state);
+      setPlayers(data.players || {});
+
+      // Update piece positions if moved by other players
+      if (data.pieces) {
+        updatePiecePositions(data.pieces);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [isMultiplayer, gameId]);
+
+  // Update piece positions in multiplayer mode
+  const updatePiecePositions = (pieces) => {
+    if (!puzzlePiecesRef.current) return;
+
+    Object.entries(pieces).forEach(([pieceId, pieceData]) => {
+      const piece = puzzlePiecesRef.current.find(p => p.userData.id === pieceId);
+      if (piece && pieceData.playerId !== localPlayerId) {
+        piece.position.copy(new THREE.Vector3(...pieceData.position));
+        piece.userData.isPlaced = pieceData.isPlaced;
+      }
+    });
+  };
+
+  // Sync piece movement to Firebase
+  // const syncPieceMovement = (piece) => {
+  //   if (!isMultiplayer || !gameId) return;
+
+  //   const pieceRef = ref(database, `games/${gameId}/pieces/${piece.userData.id}`);
+  //   set(pieceRef, {
+  //     position: [piece.position.x, piece.position.y, piece.position.z],
+  //     isPlaced: piece.userData.isPlaced,
+  //     playerId: localPlayerId
+  //   });
+  // };
+
   
 
   return (
@@ -748,6 +1048,7 @@ const PuzzleGame = () => {
       {/* Header with controls */}
       <div className="p-4 bg-gray-800 flex items-center justify-between">
         <div className="flex items-center gap-4">
+
           <label className="relative cursor-pointer">
             <input
               type="file"
@@ -761,6 +1062,65 @@ const PuzzleGame = () => {
               <span>Upload Photo</span>
             </div>
           </label>
+
+          {/* Play/Pause and Multiplayer controls */}
+          <div className="flex items-center gap-2">
+            {gameState !== 'initial' && (
+              <button
+                onClick={togglePause}
+                className="p-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
+              >
+                {gameState === 'playing' ? (
+                  <Pause className="w-5 h-5" />
+                ) : (
+                  <Play className="w-5 h-5" />
+                )}
+              </button>
+            )}
+            
+            {gameState === 'initial' && (
+              <button
+                onClick={startGame}
+                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                <Play className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+
+          {/* Multiplayer controls */}
+          <div className="flex items-center gap-2">
+            {!isMultiplayer && (
+              <button
+                onClick={createMultiplayerGame}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 
+                          hover:bg-purple-700 rounded-lg text-white"
+              >
+                <Users className="w-5 h-5" />
+                <span>Create Multiplayer</span>
+              </button>
+            )}
+
+            {isMultiplayer && gameId && (
+              <div className="flex items-center gap-2">
+                <div className="px-3 py-1 bg-gray-700 rounded-lg text-white flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  <span>{Object.keys(players).length} Players</span>
+                </div>
+                <button
+                  onClick={() => {
+                    const gameLink = `${window.location.origin}/puzzle/${gameId}`;
+                    navigator.clipboard.writeText(gameLink);
+                  }}
+                  className="p-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
+                  title="Copy game link"
+                >
+                  <Copy className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+          </div>
+        {/* </div> */}
 
           {/* Timer display */}
           <div className="flex items-center gap-2 text-white bg-gray-700 px-3 py-1 rounded-lg">
@@ -800,6 +1160,7 @@ const PuzzleGame = () => {
 
       {/* Main puzzle area */}
       <div className="flex-1 relative">
+      <div className="flex-1 relative" onMouseMove={syncMousePosition}>
         <div ref={containerRef} className="w-full h-full" />
 
         {/* Camera controls overlay */}
@@ -839,6 +1200,13 @@ const PuzzleGame = () => {
           >
             <Image className="w-5 h-5" />
           </button>
+          {/* Pause overlay */}
+          {/* {gameState === 'paused' && (
+            <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center 
+                          justify-center z-20">
+              <div className="text-3xl text-white font-bold">PAUSED</div>
+            </div>
+          )} */}
         </div>
 
         {/* Loading overlay */}
@@ -861,7 +1229,117 @@ const PuzzleGame = () => {
             </div>
           </div>
         )}
+
+        {/* Multiplayer sidebar */}
+        {isMultiplayer && (
+          <div className="w-64 bg-gray-800 p-4 flex flex-col gap-4">
+            {/* Players list */}
+            <div className="bg-gray-700 rounded-lg p-3">
+              <h3 className="text-white font-bold mb-2 flex items-center gap-2">
+                <Users className="w-4 h-4" />
+                Players
+              </h3>
+              <div className="space-y-2">
+                {Object.entries(players).map(([id, player]) => (
+                  <div 
+                    key={id} 
+                    className="flex items-center gap-2 text-sm"
+                    style={{ color: player.color }}
+                  >
+                    <div className={`w-2 h-2 rounded-full ${
+                      player.presence ? 'bg-green-500' : 'bg-gray-500'
+                    }`} />
+                    <span>{player.name}</span>
+                    {player.isReady && <CheckCircle2 className="w-4 h-4" />}
+                    <span className="text-gray-400 text-xs ml-auto">
+                      {player.stats?.piecesPlaced || 0} pieces
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Ready button */}
+            <button
+              onClick={() => {
+                setIsReady(!isReady);
+                update(ref(database, `games/${gameId}/players/${localPlayerId}`), {
+                  isReady: !isReady
+                });
+              }}
+              className={`py-2 px-4 rounded-lg transition-colors ${
+                isReady 
+                  ? 'bg-green-600 hover:bg-green-700' 
+                  : 'bg-blue-600 hover:bg-blue-700'
+              } text-white`}
+            >
+              {isReady ? 'Ready!' : 'Click when ready'}
+            </button>
+
+            {/* Chat */}
+            <div className="flex-1 flex flex-col bg-gray-700 rounded-lg overflow-hidden">
+              <div className="p-2 bg-gray-600 text-white font-bold flex items-center gap-2">
+                <MessageCircle className="w-4 h-4" />
+                Chat
+              </div>
+              <div 
+                ref={chatRef}
+                className="flex-1 p-2 space-y-2 overflow-y-auto"
+              >
+                {messages.map((msg, i) => (
+                  <div key={i} className="text-sm">
+                    <span 
+                      className="font-bold"
+                      style={{ color: msg.playerColor }}
+                    >
+                      {msg.playerName}:
+                    </span>
+                    <span className="text-white ml-2">{msg.text}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="p-2 bg-gray-800">
+                <input
+                  type="text"
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                  placeholder="Type a message..."
+                  className="w-full px-2 py-1 rounded bg-gray-900 text-white 
+                           border border-gray-700 focus:border-blue-500 
+                           focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Game stats */}
+            {progress === 100 && (
+              <div className="bg-gray-700 rounded-lg p-3">
+                <h3 className="text-white font-bold mb-2 flex items-center gap-2">
+                  <Trophy className="w-4 h-4" />
+                  Results
+                </h3>
+                <div className="space-y-1 text-sm text-white">
+                  {Object.entries(playerStats)
+                    .sort((a, b) => b[1].piecesPlaced - a[1].piecesPlaced)
+                    .map(([id, stats], index) => (
+                      <div key={id} className="flex items-center gap-2">
+                        <span className="text-gray-400">{index + 1}.</span>
+                        <span style={{ color: getPlayerColor(id) }}>
+                          {players[id]?.name}
+                        </span>
+                        <span className="ml-auto">
+                          {stats.piecesPlaced} pieces
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+    </div>
     </div>
   );
 };

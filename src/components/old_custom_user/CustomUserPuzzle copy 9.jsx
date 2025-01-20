@@ -8,7 +8,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
 import { gsap } from 'gsap';
 import confetti from 'canvas-confetti';
-import FirebaseService from '../FirebaseService';
+import FirebaseService from '../../FirebaseService';
 
 const GAME_MODES = {
   CLASSIC: 'classic',
@@ -597,35 +597,46 @@ const ImagePuzzle3D = () => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Common UI panel style
+  const panelClasses = "absolute p-4 bg-blue-900 bg-opacity-80 rounded-lg text-white";
+  
+  // Button base style
+  const buttonClasses = "px-4 py-2 rounded text-white transition-colors duration-200";
+
+
   return (
-    <div className="relative w-full h-screen">
+    <div className="relative w-full h-screen bg-slate-900">
       {/* Three.js container */}
       <div ref={mountRef} className="absolute inset-0" />
 
-      {/* UI Overlay */}
-      <div className="absolute top-4 left-4 p-4 bg-blue-900 bg-opacity-80 rounded-lg">
+      UI Overlay
+      <div className={`${panelClasses} top-4 left-4`}>
         <input
           type="file"
           accept="image/*"
           onChange={handleImageUpload}
-          className="block w-full text-sm text-white mb-2"
+          className="block w-full text-sm mb-2 file:mr-4 file:py-2 file:px-4 
+            file:rounded file:border-0 file:bg-blue-600 file:text-white
+            hover:file:bg-blue-700"
         />
-        <div className="text-white">
+        <div className="space-y-1">
           <p>Pieces: {gameStats.placedPieces}/{gameStats.totalPieces}</p>
           <p>Time: {formatTime(gameStats.elapsedTime)}</p>
           <p>Mode: {gameMode}</p>
         </div>
-      </div>
+      </div> 
 
       {/* Game Modes */}
-      <div className="absolute bottom-4 left-4 p-4 bg-blue-900 bg-opacity-80 rounded-lg">
+      <div className={`${panelClasses} bottom-4 left-4 flex gap-2`}>
         {Object.values(GAME_MODES).map(mode => (
           <button
             key={mode}
             onClick={() => setGameMode(mode)}
-            className={`mr-2 px-4 py-2 rounded ${
-              gameMode === mode ? 'bg-blue-600' : 'bg-blue-800'
-            } text-white`}
+            className={`${buttonClasses} ${
+              gameMode === mode 
+                ? 'bg-blue-600 hover:bg-blue-700' 
+                : 'bg-blue-800 hover:bg-blue-900'
+            }`}
           >
             {mode}
           </button>
@@ -634,22 +645,26 @@ const ImagePuzzle3D = () => {
 
       {/* Multiplayer Status */}
       {gameMode === GAME_MODES.MULTIPLAYER && (
-        <div className="absolute top-4 right-4 p-4 bg-blue-900 bg-opacity-80 rounded-lg text-white">
-          <h3>Players Online: {players.length}</h3>
-          <ul>
+        <div className={`${panelClasses} top-4 right-4`}>
+          <h3 className="font-medium mb-2">Players Online: {players.length}</h3>
+          <ul className="space-y-1">
             {players.map(player => (
-              <li key={player.id}>{player.name}</li>
+              <li key={player.id} className="text-sm">
+                {player.name}
+              </li>
             ))}
           </ul>
         </div>
-      )}
+      )} 
 
       {/* Instructions */}
-      <div className="absolute bottom-4 right-4 p-4 bg-blue-900 bg-opacity-80 rounded-lg text-white text-sm">
-        <p>Drag pieces to move them</p>
-        <p>Right-click + drag to rotate view</p>
-        <p>Scroll to zoom</p>       
-      </div>
+      <div className={`${panelClasses} bottom-4 right-4`}>
+        <ul className="space-y-1 text-sm">
+          <li>Drag pieces to move them</li>
+          <li>Right-click + drag to rotate view</li>
+          <li>Scroll to zoom</li>
+        </ul>
+      </div> 
     </div>
   );
 };

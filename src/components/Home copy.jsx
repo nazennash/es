@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth } from '../firebase';
 import { useNavigate } from 'react-router-dom';
+// import { getFirestore, collection, query, where, getDocs, limit, orderBy } from 'firebase/firestore';
 import { 
   getFirestore, 
   collection, 
@@ -20,9 +21,12 @@ const Home = ({ user }) => {
   const [userStats, setUserStats] = useState({
     completed: 0,
     bestTime: null,
+    rank: null,
     averageTime: null
   });
 
+  const [gameId] = useState(nanoid(6));
+  
   useEffect(() => {
     const fetchUserData = async () => {
       try {
@@ -42,13 +46,26 @@ const Home = ({ user }) => {
           id: doc.id,
           ...doc.data()
         }));
-        setRecentPuzzles(recentPuzzlesData.reverse());
+        // setRecentPuzzles(recentPuzzlesData);
+        setRecentPuzzles(recentPuzzlesData.reverse()); // Reverse to start with the latest
 
-        // Fetch user stats
-        const userStatsRef = doc(collection(db, 'user_stats'), user.uid);
+        const userData = JSON.parse(localStorage.getItem('authUser'));
+        const userId = userData.uid;
+        const userName = userData.displayName;
+
+        console.log('id', userId)
+
+
+
+        const userStatsRef = doc(collection(db, 'user_stats'), userId);
         const userStatsSnap = await getDoc(userStatsRef);
 
-        // Calculate average time
+        // Fetch user stats
+        const statsRef = collection(db, 'user_stats');
+        const statsQuery = query(statsRef, where('userId', '==', user.uid));
+        const statsSnap = await getDocs(statsQuery);
+
+        // Calculate additional statistics
         const totalTime = recentPuzzlesData.reduce((sum, puzzle) => sum + puzzle.completionTime, 0);
         const averageTime = recentPuzzlesData.length ? Math.round(totalTime / recentPuzzlesData.length) : null;
 
@@ -57,9 +74,12 @@ const Home = ({ user }) => {
           setUserStats({
             completed: statsData.completed || 0,
             bestTime: statsData.bestTime,
-            averageTime
+            averageTime,
+            rank: statsData.rank || null
           });
         }
+        
+      
       } catch (error) {
         console.error('Error fetching user data:', error);
       }
@@ -81,33 +101,27 @@ const Home = ({ user }) => {
   const handleStartPuzzle = (type) => {
     switch(type) {
       case 'custom':
-        navigate('/puzzle/custom');
+        navigate(`/puzzle/custom`);
+        // window.reload();
         break;
       case 'cultural':
         navigate('/puzzle/cultural');
+        window.reload();
         break;
       case 'multiplayer':
-        const gameId = nanoid(6);
-        navigate(`/puzzle/multiplayer/${gameId}`);
+        const gameId = `gameId`;
+        navigate(`/puzzle/multiplayer/${gameId}`, { replace: true });
         break;
       default:
         break;
     }
   };
 
-  const formatTime = (time) => {
-    if (!time) return '--:--';
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    const milliseconds = String(time.toFixed(3).split('.')[1] || '000').slice(0, 2);
-    return `${minutes}:${String(seconds).padStart(2, '0')}.${milliseconds}`;
-  };
-
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header Section */}
       <div className="bg-white shadow-sm md:flex md:items-center md:justify-between md:py-6 md:px-4">
-        <div className="flex flex-col md:flex-row md:items-center md:gap-4 pb-5 md:pb-0">
+        <div className="flex flex-col md:flex-row md:items-center md:gap-4 pb-5 md:pb-0 ">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">
               Welcome, {user?.displayName || user?.email}!
@@ -119,13 +133,13 @@ const Home = ({ user }) => {
           <div className="hidden md:flex md:gap-2 mt-4 md:mt-0">
             <button
               onClick={handleLogout}
-              className="bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 transition duration-200"
+              className="bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 transition duration-200 w-full md:w-auto"
             >
               Logout
             </button>
             <button
-              onClick={() => navigate('/leaderboard')}
-              className="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 transition duration-200"
+              onClick={() => navigate('/user-leaderboard')}
+              className="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 transition duration-200 w-full md:w-auto"
             >
               Leaderboard
             </button>
@@ -135,7 +149,7 @@ const Home = ({ user }) => {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Stats Section */}
+        {/* Quick Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900">Puzzles Completed</h3>
@@ -144,14 +158,18 @@ const Home = ({ user }) => {
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900">Best Time</h3>
             <p className="text-3xl font-bold text-green-600">
-              {formatTime(userStats.bestTime)}
+              {userStats.bestTime ? `${Math.floor(userStats.bestTime / 60)}:${String(Math.floor(userStats.bestTime % 60)).padStart(2, '0')}.${String(userStats.bestTime.toFixed(3).split('.')[1]).padEnd(3, '0').slice(0, 2)}` : '--:--'}
             </p>
           </div>
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold text-gray-900">Average Time</h3>
-            <p className="text-3xl font-bold text-purple-600">
-              {formatTime(userStats.averageTime)}
+            <p className="text-3xl font-bold text-green-600">
+              {userStats.averageTime ? `${Math.floor(userStats.averageTime / 60)}:${String(userStats.averageTime % 60).padStart(2, '0')}` : '--:--'}
             </p>
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold text-gray-900">Global Rank</h3>
+            <p className="text-3xl font-bold text-purple-600">#{userStats.rank || '--'}</p>
           </div>
         </div>
 
@@ -201,10 +219,10 @@ const Home = ({ user }) => {
                   <div key={puzzle.id} className="border rounded-lg p-4">
                     <img 
                       src={puzzle.thumbnail} 
-                      alt="Puzzle thumbnail" 
+                      alt={puzzle.name} 
                       className="w-full h-32 object-contain rounded mb-2"
                     />
-                    <h3 className="font-semibold">{puzzle.name || 'Puzzle'}</h3>
+                    <h3 className="font-semibold">{puzzle.name}</h3>
                   </div>
                 ))}
               </div>
