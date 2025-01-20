@@ -21,6 +21,7 @@ const MultiplayerPuzzle = () => {
         gameId={gameId}
         isHost={true}
         isMultiPlayer={true}
+        puzzleId={gameId}
       />
     </div>
   );

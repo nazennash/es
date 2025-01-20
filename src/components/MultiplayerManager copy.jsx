@@ -9,7 +9,7 @@ import { Bar } from 'react-chartjs-2';
 import 'chart.js/auto';
 import html2canvas from 'html2canvas';
 
-const MultiplayerPuzzle = ({ puzzleId, gameId}) => {
+const MultiplayerPuzzle = ({ puzzleId, gameId, isHost}) => {
   const userData = JSON.parse(localStorage.getItem('authUser'));
   const userId = userData.uid;
   const userName = userData.displayName || userData.email;
@@ -18,7 +18,7 @@ const MultiplayerPuzzle = ({ puzzleId, gameId}) => {
     gameId: gameId || window.location.pathname.split('/').pop() || `game-${Date.now()}`,
     // gameId: window.location.pathname.split('/').pop() || `game-${userId}-${Date.now()}`,
     imageUrl: '',
-    isHost: false,
+    isHost: isHost || false,
     difficulty: 3, 
     timer: 0,
     imageSize: { width: 0, height: 0 }, 

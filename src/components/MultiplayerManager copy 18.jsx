@@ -188,55 +188,11 @@ const PuzzleBoard = ({ difficulty, onDrop }) => {
             onPointerUp={() => onDrop(x, y)}
           >
             <planeGeometry args={[pieceSize, pieceSize]} />
-            <meshStandardMaterial color="#f0f0f0" transparent opacity={0.2} />
-            {/* Add blue border */}
-            <lineSegments>
-              <edgesGeometry args={[new THREE.PlaneGeometry(pieceSize, pieceSize)]} />
-              <lineBasicMaterial color="#2196f3" />
-            </lineSegments>
+            <meshStandardMaterial color="#f0f0f0" transparent opacity={0.5} />
           </mesh>
         );
       })}
     </group>
-  );
-};
-
-// Add new progress component
-const PuzzleProgress = ({ pieces }) => {
-  const totalPieces = pieces.length;
-  const completedPieces = pieces.filter(p => p.isPlaced).length;
-  const remainingPieces = totalPieces - completedPieces;
-  const progressPercentage = totalPieces > 0 ? (completedPieces / totalPieces) * 100 : 0;
-
-  return (
-    <div className="bg-white p-4 rounded-lg shadow mb-4">
-      <div className="flex justify-between mb-2">
-        <span>Progress: {progressPercentage.toFixed(1)}%</span>
-        <span className="text-gray-600">
-          {completedPieces}/{totalPieces}
-        </span>
-      </div>
-      <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-        <div 
-          className="h-full bg-blue-500 transition-all duration-300"
-          style={{ width: `${progressPercentage}%` }}
-        />
-      </div>
-      <div className="grid grid-cols-3 gap-4 mt-4 text-sm">
-        <div className="text-center">
-          <div className="font-bold text-blue-500">{totalPieces}</div>
-          <div className="text-gray-600">Total Pieces</div>
-        </div>
-        <div className="text-center">
-          <div className="font-bold text-green-500">{completedPieces}</div>
-          <div className="text-gray-600">Completed</div>
-        </div>
-        <div className="text-center">
-          <div className="font-bold text-orange-500">{remainingPieces}</div>
-          <div className="text-gray-600">Remaining</div>
-        </div>
-      </div>
-    </div>
   );
 };
 
@@ -759,9 +715,7 @@ const MultiplayerPuzzle = ({ puzzleId, gameId, isHost}) => {
         [`games/${gameState.gameId}/imageSize`]: {
           width: piecesData[0].width * gameState.difficulty,
           height: piecesData[0].height * gameState.difficulty
-        },
-        [`games/${gameState.gameId}/isGameStarted`]: true, // Automatically start the game
-        [`games/${gameState.gameId}/startTime`]: Date.now() // Set start time
+        }
       };
       
       await update(dbRef(database), updates);
@@ -1055,8 +1009,6 @@ const MultiplayerPuzzle = ({ puzzleId, gameId, isHost}) => {
         </div>
       )}
 
-      {isGameStarted && <PuzzleProgress pieces={pieces} />}
-
       <div className="flex gap-2 mt-4">
         <button
           onClick={() => setUi(prev => ({ ...prev, zoom: Math.max(prev.zoom - 0.1, 0.5) }))}
@@ -1159,18 +1111,12 @@ const MultiplayerPuzzle = ({ puzzleId, gameId, isHost}) => {
             </div>
           ) : (
             <>
-              <div className="flex justify-between mb-4">
+              <div className="flex justify-end mb-4">
                 <img
                   src={gameState.imageUrl}
                   alt="Expected output"
                   className="w-1/4 h-1/4 lg:w-1/6 lg:h-1/6 object-contain rounded border"
                 />
-                {isGameStarted && (
-                  <div className="text-lg font-semibold">
-                    Time: {Math.floor(gameState.timer / 60)}:
-                    {String(gameState.timer % 60).padStart(2, '0')}
-                  </div>
-                )}
               </div>
               <Canvas>
                 <Suspense fallback={null}>

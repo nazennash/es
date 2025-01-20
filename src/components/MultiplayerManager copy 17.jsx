@@ -12,155 +12,37 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 
-// Add new utility function for image splitting
-const splitImage = async (imageUrl, difficulty) => {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "Anonymous";  // Handle CORS
-    
-    img.onload = () => {
-      const pieces = [];
-      const pieceWidth = img.width / difficulty;
-      const pieceHeight = img.height / difficulty;
-      
-      // Create temporary canvas for image manipulation
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      
-      // For each piece position
-      for (let row = 0; row < difficulty; row++) {
-        for (let col = 0; col < difficulty; col++) {
-          // Set canvas size to piece size
-          canvas.width = pieceWidth;
-          canvas.height = pieceHeight;
-          
-          // Clear canvas
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          
-          // Draw the specific portion of the image
-          ctx.drawImage(
-            img,
-            col * pieceWidth,     // sx
-            row * pieceHeight,    // sy
-            pieceWidth,          // sWidth
-            pieceHeight,         // sHeight
-            0,                   // dx
-            0,                   // dy
-            pieceWidth,          // dWidth
-            pieceHeight          // dHeight
-          );
-          
-          // Convert to data URL
-          const pieceDataUrl = canvas.toDataURL('image/png');
-          
-          pieces.push({
-            id: `piece-${row}-${col}`,
-            imageUrl: pieceDataUrl,
-            correct: { x: row, y: col },
-            initialAngle: Math.random() * Math.PI * 2,
-            initialPos: {
-              x: Math.cos(Math.random() * Math.PI * 2) * (Math.random() * 2),
-              y: Math.sin(Math.random() * Math.PI * 2) * (Math.random() * 2)
-            },
-            width: pieceWidth,
-            height: pieceHeight
-          });
-        }
-      }
-      resolve(pieces);
-    };
-    
-    img.onerror = () => reject(new Error('Failed to load image'));
-    img.src = imageUrl;
-  });
-};
-
-// Update PuzzlePiece component to use individual piece texture
-const PuzzlePiece = ({ piece, gridSize, onSelect, isSelected, isPlaced }) => {
+const PuzzlePiece = ({ piece, imageUrl, gridSize, onSelect, isSelected, isPlaced }) => {
   const meshRef = useRef();
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragPos, setDragPos] = useState([0, 0, 0]);
-  const textureLoader = new THREE.TextureLoader();
-  const texture = textureLoader.load(piece.imageUrl);
   
+  // Calculate piece size based on grid
   const pieceSize = 1 / gridSize;
-
-  // Calculate initial scattered position
-  const scatterRadius = 2; // Adjust this value to control how far pieces scatter
-  const randomAngle = piece.initialAngle || Math.random() * Math.PI * 2;
-  const randomRadius = Math.random() * scatterRadius;
-  const initialX = piece.initialPos ? piece.initialPos.x : Math.cos(randomAngle) * randomRadius;
-  const initialY = piece.initialPos ? piece.initialPos.y : Math.sin(randomAngle) * randomRadius;
-
-  useEffect(() => {
-    if (!piece.isPlaced) {
-      meshRef.current.position.x = initialX;
-      meshRef.current.position.y = initialY;
-    }
-  }, []);
-
-  const onPointerDown = (e) => {
-    e.stopPropagation();
-    setIsDragging(true);
-    meshRef.current.setPointerCapture(e.pointerId);
-  };
-
-  const onPointerMove = (e) => {
-    if (isDragging) {
-      // Convert mouse movement to world space
-      const rect = e.target.getBoundingClientRect();
-      const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      
-      // Update piece position
-      setDragPos([x * 3, y * 3, 0]); // Multiply by 3 to increase movement range
-    }
-  };
-
-  const onPointerUp = (e) => {
-    if (isDragging) {
-      setIsDragging(false);
-      meshRef.current.releasePointerCapture(e.pointerId);
-      
-      // Calculate nearest grid position
-      const gridX = Math.round(dragPos[0] / pieceSize);
-      const gridY = Math.round(dragPos[1] / pieceSize);
-      
-      // Trigger drop event
-      onSelect({ ...piece, dropPosition: { x: gridX + Math.floor(gridSize/2), y: gridY + Math.floor(gridSize/2) }});
-    }
-  };
+  
+  // Calculate UV coordinates for texture mapping
+  const u1 = piece.correct.y / gridSize;
+  const v1 = piece.correct.x / gridSize;
+  const u2 = (piece.correct.y + 1) / gridSize;
+  const v2 = (piece.correct.x + 1) / gridSize;
 
   return (
     <mesh
       ref={meshRef}
-      position={isDragging ? dragPos : [
-        piece.isPlaced ? (piece.current.y - gridSize/2) * pieceSize : initialX,
-        piece.isPlaced ? (gridSize/2 - piece.current.x) * pieceSize : initialY,
+      position={[
+        (piece.current.y - gridSize/2) * pieceSize,
+        (gridSize/2 - piece.current.x) * pieceSize,
         0
       ]}
       rotation={[0, 0, (piece.rotation * Math.PI) / 180]}
-      onClick={(e) => !isDragging && onSelect(piece)}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
+      onClick={() => onSelect(piece)}
     >
       <planeGeometry args={[pieceSize, pieceSize]} />
-      <meshStandardMaterial 
-        map={texture}
-        transparent={true}
-        opacity={isDragging ? 0.7 : 1}
-      />
-      {(isSelected || isDragging) && (
+      <meshStandardMaterial>
+        <textureLoader url={imageUrl} />
+      </meshStandardMaterial>
+      {isSelected && (
         <lineSegments>
           <edgesGeometry args={[new THREE.PlaneGeometry(pieceSize, pieceSize)]} />
           <lineBasicMaterial color="blue" />
-        </lineSegments>
-      )}
-      {isPlaced && (
-        <lineSegments>
-          <edgesGeometry args={[new THREE.PlaneGeometry(pieceSize, pieceSize)]} />
-          <lineBasicMaterial color="green" />
         </lineSegments>
       )}
     </mesh>
@@ -188,55 +70,11 @@ const PuzzleBoard = ({ difficulty, onDrop }) => {
             onPointerUp={() => onDrop(x, y)}
           >
             <planeGeometry args={[pieceSize, pieceSize]} />
-            <meshStandardMaterial color="#f0f0f0" transparent opacity={0.2} />
-            {/* Add blue border */}
-            <lineSegments>
-              <edgesGeometry args={[new THREE.PlaneGeometry(pieceSize, pieceSize)]} />
-              <lineBasicMaterial color="#2196f3" />
-            </lineSegments>
+            <meshStandardMaterial color="#f0f0f0" transparent opacity={0.5} />
           </mesh>
         );
       })}
     </group>
-  );
-};
-
-// Add new progress component
-const PuzzleProgress = ({ pieces }) => {
-  const totalPieces = pieces.length;
-  const completedPieces = pieces.filter(p => p.isPlaced).length;
-  const remainingPieces = totalPieces - completedPieces;
-  const progressPercentage = totalPieces > 0 ? (completedPieces / totalPieces) * 100 : 0;
-
-  return (
-    <div className="bg-white p-4 rounded-lg shadow mb-4">
-      <div className="flex justify-between mb-2">
-        <span>Progress: {progressPercentage.toFixed(1)}%</span>
-        <span className="text-gray-600">
-          {completedPieces}/{totalPieces}
-        </span>
-      </div>
-      <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-        <div 
-          className="h-full bg-blue-500 transition-all duration-300"
-          style={{ width: `${progressPercentage}%` }}
-        />
-      </div>
-      <div className="grid grid-cols-3 gap-4 mt-4 text-sm">
-        <div className="text-center">
-          <div className="font-bold text-blue-500">{totalPieces}</div>
-          <div className="text-gray-600">Total Pieces</div>
-        </div>
-        <div className="text-center">
-          <div className="font-bold text-green-500">{completedPieces}</div>
-          <div className="text-gray-600">Completed</div>
-        </div>
-        <div className="text-center">
-          <div className="font-bold text-orange-500">{remainingPieces}</div>
-          <div className="text-gray-600">Remaining</div>
-        </div>
-      </div>
-    </div>
   );
 };
 
@@ -730,42 +568,26 @@ const MultiplayerPuzzle = ({ puzzleId, gameId, isHost}) => {
       const snapshot = await uploadBytes(imageRef, file);
       const url = await getDownloadURL(snapshot.ref);
       
-      // Split image into pieces
-      const piecesData = await splitImage(url, gameState.difficulty);
-      
-      // Create initial game pieces with randomized positions
-      const availablePositions = [];
-      for (let i = 0; i < gameState.difficulty; i++) {
-        for (let j = 0; j < gameState.difficulty; j++) {
-          availablePositions.push({ x: i, y: j });
+      const img = new Image();
+      img.onload = async () => {
+        try {
+          const updates = {
+            [`games/${gameState.gameId}/imageUrl`]: url,
+            [`games/${gameState.gameId}/imageSize`]: {
+              width: img.width,
+              height: img.height
+            }
+          };
+          await update(dbRef(database), updates);
+          setUi(prev => ({ ...prev, loading: false }));
+        } catch (err) {
+          throw new Error('Failed to update game with image information');
         }
-      }
-      
-      const initialPieces = piecesData.map(pieceData => {
-        const randomIndex = Math.floor(Math.random() * availablePositions.length);
-        const position = availablePositions.splice(randomIndex, 1)[0];
-        
-        return {
-          ...pieceData,
-          current: position,
-          rotation: Math.floor(Math.random() * 4) * 90,
-          isPlaced: false
-        };
-      });
-
-      const updates = {
-        [`games/${gameState.gameId}/imageUrl`]: url,
-        [`games/${gameState.gameId}/pieces`]: initialPieces,
-        [`games/${gameState.gameId}/imageSize`]: {
-          width: piecesData[0].width * gameState.difficulty,
-          height: piecesData[0].height * gameState.difficulty
-        },
-        [`games/${gameState.gameId}/isGameStarted`]: true, // Automatically start the game
-        [`games/${gameState.gameId}/startTime`]: Date.now() // Set start time
       };
-      
-      await update(dbRef(database), updates);
-      setUi(prev => ({ ...prev, loading: false }));
+      img.onerror = () => {
+        throw new Error('Failed to load image');
+      };
+      img.src = url;
     } catch (err) {
       console.error('Image upload error:', err);
       setUi(prev => ({
@@ -831,18 +653,20 @@ const MultiplayerPuzzle = ({ puzzleId, gameId, isHost}) => {
   };
   
 
-  const handleDrop = async (piece) => {
-    if (!piece.dropPosition) return;
+  const handleDrop = async (x, y) => {
+    if (!ui.draggedPiece) return;
 
     try {
-      const { x, y } = piece.dropPosition;
       const updatedPieces = pieces.map(p => {
-        if (p.id === piece.id) {
+        if (p.id === ui.draggedPiece.id) {
           const isCorrect = x === p.correct.x && 
                            y === p.correct.y && 
                            p.rotation % 360 === 0;
           
           return { ...p, current: { x, y }, isPlaced: isCorrect };
+        } else if (p.current.x === x && p.current.y === y) {
+          // Swap the piece that was in the target cell
+          return { ...p, current: { x: ui.draggedPiece.current.x, y: ui.draggedPiece.current.y } };
         }
         return p;
       });
@@ -850,17 +674,19 @@ const MultiplayerPuzzle = ({ puzzleId, gameId, isHost}) => {
       const updates = {};
       updates[`games/${gameState.gameId}/pieces`] = updatedPieces;
       
-      if (updatedPieces.find(p => p.id === piece.id)?.isPlaced) {
+      if (updatedPieces.find(p => p.id === ui.draggedPiece.id)?.isPlaced) {
         updates[`games/${gameState.gameId}/players/${userId}/score`] = 
           ((players[userId]?.score || 0) + 1);
       }
 
       await update(dbRef(database), updates);
+      setUi(prev => ({ ...prev, draggedPiece: null }));
     } catch (err) {
       console.error('Failed to update piece position:', err);
       setUi(prev => ({
         ...prev,
-        error: { type: 'error', message: 'Failed to move piece' }
+        error: { type: 'error', message: 'Failed to move piece' },
+        draggedPiece: null
       }));
     }
   };
@@ -1055,8 +881,6 @@ const MultiplayerPuzzle = ({ puzzleId, gameId, isHost}) => {
         </div>
       )}
 
-      {isGameStarted && <PuzzleProgress pieces={pieces} />}
-
       <div className="flex gap-2 mt-4">
         <button
           onClick={() => setUi(prev => ({ ...prev, zoom: Math.max(prev.zoom - 0.1, 0.5) }))}
@@ -1159,18 +983,12 @@ const MultiplayerPuzzle = ({ puzzleId, gameId, isHost}) => {
             </div>
           ) : (
             <>
-              <div className="flex justify-between mb-4">
+              <div className="flex justify-end mb-4">
                 <img
                   src={gameState.imageUrl}
                   alt="Expected output"
                   className="w-1/4 h-1/4 lg:w-1/6 lg:h-1/6 object-contain rounded border"
                 />
-                {isGameStarted && (
-                  <div className="text-lg font-semibold">
-                    Time: {Math.floor(gameState.timer / 60)}:
-                    {String(gameState.timer % 60).padStart(2, '0')}
-                  </div>
-                )}
               </div>
               <Canvas>
                 <Suspense fallback={null}>
@@ -1188,6 +1006,7 @@ const MultiplayerPuzzle = ({ puzzleId, gameId, isHost}) => {
                     <PuzzlePiece
                       key={piece.id}
                       piece={piece}
+                      imageUrl={gameState.imageUrl}
                       gridSize={gameState.difficulty}
                       onSelect={(piece) => setUi(prev => ({
                         ...prev,
