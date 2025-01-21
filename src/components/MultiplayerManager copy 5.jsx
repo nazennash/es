@@ -1038,157 +1038,157 @@ const PuzzleGame = ({ puzzleId, gameId, isHost }) => {
   );
 
   return (
-      <div className="w-full h-screen flex flex-col bg-gray-900">
-        {/* Header */}
-        <div className="p-4 bg-gray-800 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            {gameState.isHost && gameState.gameStatus === 'waiting' && (
-              <label className="relative cursor-pointer">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                />
-                <div className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 
-                              rounded-lg text-white transition-colors">
-                  <Camera className="w-5 h-5" />
-                  <span>Upload Photo</span>
-                </div>
-              </label>
-            )}
-  
-            <div className="flex items-center gap-2 text-white bg-gray-700 px-3 py-1 rounded-lg">
-              <Clock className="w-4 h-4" />
-              <span>{formatTime(timeElapsed)}</span>
-            </div>
-  
-            {gameState.gameStatus === 'playing' && (
-              <div className="text-white">
-                {`Progress: ${Math.round(progress)}%`}
+    <div className="w-full h-screen flex flex-col bg-gray-900">
+      {/* Header */}
+      <div className="p-4 bg-gray-800 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          {gameState.isHost && gameState.gameStatus === 'waiting' && (
+            <label className="relative cursor-pointer">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="hidden"
+              />
+              <div className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 
+                            rounded-lg text-white transition-colors">
+                <Camera className="w-5 h-5" />
+                <span>Upload Photo</span>
               </div>
-            )}
-          </div>
-  
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowPlayerList(!showPlayerList)}
-              className="p-2 border rounded hover:bg-gray-700 text-white"
-              title="Toggle Players"
-            >
-              <Users className="w-4 h-4" />
-            </button>
-            
-            <button
-              onClick={copyGameLink}
-              className="p-2 border rounded hover:bg-gray-700 text-white"
-              title="Share Game"
-            >
-              <Share2 className="w-4 h-4" />
-            </button>
-  
-            <button
-              onClick={() => navigate('/')}
-              className="p-2 border rounded hover:bg-gray-700 text-white"
-              title="Return Home"
-            >
-              <Home className="w-4 h-4" />
-            </button>
-  
-            <button
-              onClick={async () => {
-                await cleanupGameSession();
-                navigate('/');
-              }}
-              className="p-2 border rounded hover:bg-red-600 text-white"
-              title="Leave Game"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-  
-        {/* Main puzzle area */}
-        <div className="flex-1 relative">
-          <div ref={containerRef} className="w-full h-full" />
-  
-          {players && Object.keys(players).length > 0 && (
-            <div className="absolute right-4 top-4 bg-gray-800 p-4 rounded-lg">
-              <h3 className="text-white font-bold mb-2">Players</h3>
-              {Object.values(players).map(player => (
-                <div key={player.id} className="flex items-center gap-2 text-white">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: player.color }} />
-                  <span>{player.name}</span>
-                  <span className="ml-auto">{player.score || 0}</span>
-                </div>
-              ))}
-            </div>
+            </label>
           )}
-  
-          {/* Camera controls overlay */}
-          <div className="absolute right-4 top-4 flex flex-col gap-2">
-            <button
-              onClick={handleZoomIn}
-              className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              title="Zoom In"
-            >
-              <ZoomIn className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleZoomOut}
-              className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              title="Zoom Out"
-            >
-              <ZoomOut className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleResetView}
-              className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              title="Reset View"
-            >
-              <Maximize2 className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleResetGame}
-              className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              title="Reset Puzzle"
-            >
-              <RotateCcw className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setShowThumbnail(!showThumbnail)}
-              className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              title="Toggle Reference Image"
-            >
-              <Image className="w-5 h-5" />
-            </button>
+
+          <div className="flex items-center gap-2 text-white bg-gray-700 px-3 py-1 rounded-lg">
+            <Clock className="w-4 h-4" />
+            <span>{formatTime(timeElapsed)}</span>
           </div>
-  
-          {/* Loading overlay */}
-          {loading && (
-            <div className="absolute inset-0 flex items-center justify-center 
-                          bg-gray-900 bg-opacity-75 z-10">
-              <div className="text-xl text-white">Loading puzzle...</div>
-            </div>
-          )}
-  
-          {/* Thumbnail overlay */}
-          {showThumbnail && image && (
-            <div className="absolute left-4 top-4 p-2 bg-gray-800 rounded-lg shadow-lg">
-              <div className="relative">
-                <img
-                  src={image}
-                  alt="Reference"
-                  className="w-48 h-auto rounded border border-gray-600"
-                />
-              </div>
+
+          {gameState.gameStatus === 'playing' && (
+            <div className="text-white">
+              {`Progress: ${Math.round(progress)}%`}
             </div>
           )}
         </div>
-        {winner && <WinnerNotification winner={winner} />}
-        {showShareModal && <ShareModal />}
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowPlayerList(!showPlayerList)}
+            className="p-2 border rounded hover:bg-gray-700 text-white"
+            title="Toggle Players"
+          >
+            <Users className="w-4 h-4" />
+          </button>
+          
+          <button
+            onClick={copyGameLink}
+            className="p-2 border rounded hover:bg-gray-700 text-white"
+            title="Share Game"
+          >
+            <Share2 className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => navigate('/')}
+            className="p-2 border rounded hover:bg-gray-700 text-white"
+            title="Return Home"
+          >
+            <Home className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={async () => {
+              await cleanupGameSession();
+              navigate('/');
+            }}
+            className="p-2 border rounded hover:bg-red-600 text-white"
+            title="Leave Game"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </div>
-    );
-  };
+
+      {/* Main puzzle area */}
+      <div className="flex-1 relative">
+        <div ref={containerRef} className="w-full h-full" />
+
+        {players && Object.keys(players).length > 0 && (
+          <div className="absolute right-4 top-4 bg-gray-800 p-4 rounded-lg">
+            <h3 className="text-white font-bold mb-2">Players</h3>
+            {Object.values(players).map(player => (
+              <div key={player.id} className="flex items-center gap-2 text-white">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: player.color }} />
+                <span>{player.name}</span>
+                <span className="ml-auto">{player.score || 0}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Camera controls overlay */}
+        <div className="absolute right-4 top-4 flex flex-col gap-2">
+          <button
+            onClick={handleZoomIn}
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            title="Zoom In"
+          >
+            <ZoomIn className="w-5 h-5" />
+          </button>
+          <button
+            onClick={handleZoomOut}
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            title="Zoom Out"
+          >
+            <ZoomOut className="w-5 h-5" />
+          </button>
+          <button
+            onClick={handleResetView}
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            title="Reset View"
+          >
+            <Maximize2 className="w-5 h-5" />
+          </button>
+          <button
+            onClick={handleResetGame}
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            title="Reset Puzzle"
+          >
+            <RotateCcw className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setShowThumbnail(!showThumbnail)}
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            title="Toggle Reference Image"
+          >
+            <Image className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Loading overlay */}
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center 
+                        bg-gray-900 bg-opacity-75 z-10">
+            <div className="text-xl text-white">Loading puzzle...</div>
+          </div>
+        )}
+
+        {/* Thumbnail overlay */}
+        {showThumbnail && image && (
+          <div className="absolute left-4 top-4 p-2 bg-gray-800 rounded-lg shadow-lg">
+            <div className="relative">
+              <img
+                src={image}
+                alt="Reference"
+                className="w-48 h-auto rounded border border-gray-600"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+      {winner && <WinnerNotification winner={winner} />}
+      {showShareModal && <ShareModal />}
+    </div>
+  );
+};
 
 export default PuzzleGame;

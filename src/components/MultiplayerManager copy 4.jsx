@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
-import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, Play, Pause, Users, Share2, LogOut, Home } from 'lucide-react';
+import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, Play, Pause, Users, Share2 } from 'lucide-react';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { getDatabase, ref as dbRef, set, onValue, update, get } from 'firebase/database';
 import { useNavigate } from 'react-router-dom';
@@ -178,12 +178,9 @@ const PuzzleGame = ({ puzzleId, gameId, isHost }) => {
   const [totalPieces, setTotalPieces] = useState(0);
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
+  // const [gameState, setGameState] = useState('initial'); // 'initial', 'playing', 'paused'
   const [showThumbnail, setShowThumbnail] = useState(false);
-  const [showPlayerList, setShowPlayerList] = useState(true);
-  const [ui, setUi] = useState({
-    error: null,
-    notification: null
-  });
+  const [isGameStarted, setIsGameStarted] = useState(false);
 
 
   // Firebase setup
@@ -196,7 +193,6 @@ const PuzzleGame = ({ puzzleId, gameId, isHost }) => {
   const userId = userData?.uid || `user-${Date.now()}`;
   const userName = userData?.displayName || userData?.email || `Player ${Math.floor(Math.random() * 1000)}`;
 
-
   // State management includes both original and multiplayer states
   const [gameState, setGameState] = useState({
     gameId: gameId || window.location.pathname.split('/').pop() || `game-${Date.now()}`,
@@ -206,8 +202,7 @@ const PuzzleGame = ({ puzzleId, gameId, isHost }) => {
     timer: 0,
     imageSize: { width: 0, height: 0 },
     startTime: null,
-    lastUpdateTime: null,
-    gameStatus: 'waiting' // 'waiting', 'playing', 'paused', 'completed'
+    lastUpdateTime: null
   });
 
   console.log(gameState)
@@ -246,7 +241,7 @@ const PuzzleGame = ({ puzzleId, gameId, isHost }) => {
         const data = snapshot.val();
         
         if (!data) {
-          // New game
+          // New game setup
           await set(gameRef, {
             players: {
               [userId]: {
@@ -254,59 +249,42 @@ const PuzzleGame = ({ puzzleId, gameId, isHost }) => {
                 name: userName,
                 score: 0,
                 color: `#${Math.floor(Math.random()*16777215).toString(16)}`,
-                isHost: true,
-                isActive: true,
-                lastActive: Date.now()
+                isHost: true
               }
             },
             imageUrl: '',
-            gameStatus: 'waiting',
+            isGameStarted: false,
             timer: 0,
             difficulty: gameState.difficulty,
             startTime: null,
-            imageSize: gameState.imageSize,
-            pieces: [],
-            settings: DIFFICULTY_SETTINGS.medium
+            imageSize: gameState.imageSize
           });
           setGameState(prev => ({ ...prev, isHost: true }));
         } else {
           // Join existing game
-          if (data.gameStatus !== 'waiting' && !data.players?.[userId]) {
-            setUi(prev => ({
-              ...prev,
-              error: { type: 'error', message: 'Game already in progress' }
-            }));
-            return;
-          }
-
-          const playerUpdate = {
-            [`players/${userId}`]: {
-              id: userId,
-              name: userName,
-              score: 0,
-              color: `#${Math.floor(Math.random()*16777215).toString(16)}`,
-              isHost: false,
-              isActive: true,
-              lastActive: Date.now()
-            }
-          };
-          await update(gameRef, playerUpdate);
-
           setGameState(prev => ({
             ...prev,
             difficulty: data.difficulty || 3,
             isHost: data.players?.[userId]?.isHost || false,
             startTime: data.startTime || null,
-            imageSize: data.imageSize || { width: 0, height: 0 },
-            gameStatus: data.gameStatus
+            imageSize: data.imageSize || { width: 0, height: 0 }
           }));
+          
+          if (!data.players?.[userId]) {
+            const playerUpdate = {
+              [`players/${userId}`]: {
+                id: userId,
+                name: userName,
+                score: 0,
+                color: `#${Math.floor(Math.random()*16777215).toString(16)}`,
+                isHost: false
+              }
+            };
+            await update(gameRef, playerUpdate);
+          }
         }
       } catch (err) {
         console.error('Failed to initialize game:', err);
-        setUi(prev => ({
-          ...prev,
-          error: { type: 'error', message: 'Failed to join game' }
-        }));
       }
     };
 
@@ -314,7 +292,15 @@ const PuzzleGame = ({ puzzleId, gameId, isHost }) => {
     const unsubscribe = onValue(gameRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        updateGameStateFromSnapshot(data);
+        setGameState(prev => ({
+          ...prev,
+          imageUrl: data.imageUrl || '',
+          difficulty: data.difficulty || 3,
+          timer: data.timer || 0
+        }));
+        setPlayers(data.players || {});
+        setPieces(data.pieces || []);
+        setIsGameStarted(data.isGameStarted || false);
       }
     });
 
@@ -323,127 +309,27 @@ const PuzzleGame = ({ puzzleId, gameId, isHost }) => {
     // Cleanup
     return () => {
       unsubscribe();
-      cleanupGameSession();
-    };
-  }, [gameState.gameId]);
-
-   // Handle multiplayer piece updates
-   // Game state update handler
-  const updateGameStateFromSnapshot = (data) => {
-    setGameState(prev => ({
-      ...prev,
-      imageUrl: data.imageUrl || '',
-      difficulty: data.difficulty || 3,
-      timer: data.timer || 0,
-      gameStatus: data.gameStatus || 'waiting'
-    }));
-    setPlayers(data.players || {});
-    setPieces(data.pieces || []);
-    updatePuzzlePieces(data.pieces || []);
-    handleGameStatusChange(data.gameStatus);
-  };
-
-  // Piece movement sync
-  const updatePiecePosition = async (piece, position, rotation) => {
-    if (!piece || gameState.gameStatus !== 'playing') return;
-
-    try {
-      const pieceUpdate = {
-        [`games/${gameState.gameId}/pieces/${piece.id}`]: {
-          ...piece,
-          position: {
-            x: position.x,
-            y: position.y,
-            z: position.z
-          },
-          rotation: {
-            z: rotation.z
-          },
-          lastUpdatedBy: userId,
-          lastUpdateTime: Date.now()
-        }
-      };
-      await update(dbRef(database), pieceUpdate);
-    } catch (err) {
-      console.error('Failed to update piece position:', err);
-    }
-  };
-
-  // Player activity tracking
-  const updatePlayerActivity = async () => {
-    try {
-      const updates = {};
-      updates[`games/${gameState.gameId}/players/${userId}/lastActive`] = Date.now();
-      updates[`games/${gameState.gameId}/players/${userId}/isActive`] = true;
-      await update(dbRef(database), updates);
-    } catch (err) {
-      console.error('Failed to update player activity:', err);
-    }
-  };
-
-  // Host transfer
-  const transferHostStatus = async (newHostId) => {
-    try {
-      const updates = {};
-      // Remove host status from all players
-      Object.keys(players).forEach(playerId => {
-        updates[`games/${gameState.gameId}/players/${playerId}/isHost`] = false;
-      });
-      // Set new host
-      updates[`games/${gameState.gameId}/players/${newHostId}/isHost`] = true;
-      await update(dbRef(database), updates);
-    } catch (err) {
-      console.error('Failed to transfer host status:', err);
-    }
-  };
-
-  const checkGameCompletion = async () => {
-    if (!pieces.length) return;
-
-    const allPiecesPlaced = pieces.every(piece => piece.isPlaced);
-    if (allPiecesPlaced) {
-      const winningPlayer = Object.values(players).reduce((highest, current) => {
-        return (!highest || current.score > highest.score) ? current : highest;
-      }, null);
-
-      try {
-        const updates = {
-          [`games/${gameState.gameId}/gameStatus`]: 'completed',
-          [`games/${gameState.gameId}/winner`]: winningPlayer,
-          [`games/${gameState.gameId}/completionTime`]: Date.now()
-        };
-        await update(dbRef(database), updates);
-        setWinner(winningPlayer);
-        setShowShareModal(true);
-      } catch (err) {
-        console.error('Failed to update game completion:', err);
-      }
-    }
-  };
-
-  // Session cleanup
-  const cleanupGameSession = async () => {
-    try {
+      if (timerRef.current) clearInterval(timerRef.current);
+      // Remove player when they leave
       const updates = {};
       updates[`games/${gameState.gameId}/players/${userId}`] = null;
+      update(dbRef(database), updates);
+    };
+  }, [gameState.gameId, userId, database]);
 
-      if (gameState.isHost) {
-        // Transfer host status if there are other players
-        const otherPlayers = Object.entries(players)
-          .filter(([id]) => id !== userId);
-        
-        if (otherPlayers.length > 0) {
-          const [newHostId] = otherPlayers[0];
-          await transferHostStatus(newHostId);
-        } else {
-          // If no other players, remove the game
-          await set(dbRef(database, `games/${gameState.gameId}`), null);
-        }
-      }
-
+   // Handle multiplayer piece updates
+   const updatePiecePosition = async (piece, position, rotation) => {
+    try {
+      const updates = {};
+      updates[`games/${gameState.gameId}/pieces/${piece.id}`] = {
+        ...piece,
+        position,
+        rotation,
+        lastUpdatedBy: userId
+      };
       await update(dbRef(database), updates);
     } catch (err) {
-      console.error('Error during cleanup:', err);
+      console.error('Failed to update piece position:', err);
     }
   };
 
@@ -455,111 +341,11 @@ const PuzzleGame = ({ puzzleId, gameId, isHost }) => {
   };
 
   // Game state management
-  const startGame = async () => {
-    if (!gameState.isHost) return;
+  const startGame = () => {
+    setGameState('playing');
+    setIsTimerRunning(true);
 
-    try {
-      const updates = {
-        [`games/${gameState.gameId}/gameStatus`]: 'playing',
-        [`games/${gameState.gameId}/startTime`]: Date.now(),
-        [`games/${gameState.gameId}/timer`]: 0
-      };
-      await update(dbRef(database), updates);
-    } catch (err) {
-      console.error('Failed to start game:', err);
-    }
   };
-
-  const pauseGame = async () => {
-    if (!gameState.isHost) return;
-
-    try {
-      const updates = {
-        [`games/${gameState.gameId}/gameStatus`]: 'paused',
-        [`games/${gameState.gameId}/lastPauseTime`]: Date.now()
-      };
-      await update(dbRef(database), updates);
-    } catch (err) {
-      console.error('Failed to pause game:', err);
-    }
-  };
-
-  const resumeGame = async () => {
-    if (!gameState.isHost) return;
-
-    try {
-      const updates = {
-        [`games/${gameState.gameId}/gameStatus`]: 'playing',
-        [`games/${gameState.gameId}/lastResumeTime`]: Date.now()
-      };
-      await update(dbRef(database), updates);
-    } catch (err) {
-      console.error('Failed to resume game:', err);
-    }
-  };
-
-  const PlayerList = () => (
-    <div className="absolute left-4 top-4 bg-gray-800 p-4 rounded-lg shadow-lg">
-      <h3 className="text-white font-bold mb-2 flex items-center gap-2">
-        <Users className="w-4 h-4" />
-        Players
-      </h3>
-      <div className="space-y-2">
-        {Object.values(players).map(player => (
-          <div 
-            key={player.id}
-            className="flex items-center gap-2 text-white"
-          >
-            <div 
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: player.color }}
-            />
-            <span>{player.name}</span>
-            <span className="ml-auto">{player.score || 0}</span>
-            {player.isHost && (
-              <span className="text-xs bg-blue-500 px-1 rounded">Host</span>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const GameControls = () => (
-    <div className="absolute bottom-4 left-4 flex gap-2">
-      {gameState.isHost && (
-        <>
-          {gameState.gameStatus === 'waiting' && (
-            <button
-              onClick={startGame}
-              className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-              title="Start Game"
-            >
-              <Play className="w-5 h-5" />
-            </button>
-          )}
-          {gameState.gameStatus === 'playing' && (
-            <button
-              onClick={pauseGame}
-              className="p-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700"
-              title="Pause Game"
-            >
-              <Pause className="w-5 h-5" />
-            </button>
-          )}
-          {gameState.gameStatus === 'paused' && (
-            <button
-              onClick={resumeGame}
-              className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-              title="Resume Game"
-            >
-              <Play className="w-5 h-5" />
-            </button>
-          )}
-        </>
-      )}
-    </div>
-  );
 
   const updateGameState = async (newState) => {
     if (!gameId) return;
@@ -1038,157 +824,173 @@ const PuzzleGame = ({ puzzleId, gameId, isHost }) => {
   );
 
   return (
-      <div className="w-full h-screen flex flex-col bg-gray-900">
-        {/* Header */}
-        <div className="p-4 bg-gray-800 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            {gameState.isHost && gameState.gameStatus === 'waiting' && (
-              <label className="relative cursor-pointer">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="hidden"
-                />
-                <div className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 
-                              rounded-lg text-white transition-colors">
-                  <Camera className="w-5 h-5" />
-                  <span>Upload Photo</span>
-                </div>
-              </label>
-            )}
-  
-            <div className="flex items-center gap-2 text-white bg-gray-700 px-3 py-1 rounded-lg">
-              <Clock className="w-4 h-4" />
-              <span>{formatTime(timeElapsed)}</span>
+    <div className="w-full h-screen flex flex-col bg-gray-900">
+      {/* Header with controls */}
+      <div className="p-4 bg-gray-800 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <label className="relative cursor-pointer">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+            />
+            <div className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 
+                          rounded-lg text-white transition-colors">
+              <Camera className="w-5 h-5" />
+              <span>Upload Photo</span>
             </div>
-  
-            {gameState.gameStatus === 'playing' && (
-              <div className="text-white">
-                {`Progress: ${Math.round(progress)}%`}
-              </div>
+          </label>
+
+          {/* Play/Pause controls */}
+          <div className="flex items-center gap-2">
+            {gameState !== 'initial' && (
+              <button
+                onClick={togglePause}
+                className="p-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
+              >
+                {gameState === 'playing' ? (
+                  <Pause className="w-5 h-5" />
+                ) : (
+                  <Play className="w-5 h-5" />
+                )}
+              </button>
             )}
-          </div>
-  
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowPlayerList(!showPlayerList)}
-              className="p-2 border rounded hover:bg-gray-700 text-white"
-              title="Toggle Players"
-            >
-              <Users className="w-4 h-4" />
-            </button>
             
-            <button
-              onClick={copyGameLink}
-              className="p-2 border rounded hover:bg-gray-700 text-white"
-              title="Share Game"
-            >
-              <Share2 className="w-4 h-4" />
-            </button>
-  
-            <button
-              onClick={() => navigate('/')}
-              className="p-2 border rounded hover:bg-gray-700 text-white"
-              title="Return Home"
-            >
-              <Home className="w-4 h-4" />
-            </button>
-  
-            <button
-              onClick={async () => {
-                await cleanupGameSession();
-                navigate('/');
-              }}
-              className="p-2 border rounded hover:bg-red-600 text-white"
-              title="Leave Game"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            {gameState === 'initial' && (
+              <button
+                onClick={startGame}
+                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                <Play className="w-5 h-5" />
+              </button>
+            )}
           </div>
+
+          {/* Timer display */}
+          <div className="flex items-center gap-2 text-white bg-gray-700 px-3 py-1 rounded-lg">
+            <Clock className="w-4 h-4" />
+            <span>{formatTime(timeElapsed)}</span>
+          </div>
+
+          <button className="p-2 text-gray-300 hover:text-white">
+            <Info className="w-5 h-5" />
+          </button>
+          <button
+          onClick={copyGameLink}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Share Game"
+        >
+          <Share2 className="h-4 w-4" />
+        </button>
         </div>
-  
-        {/* Main puzzle area */}
-        <div className="flex-1 relative">
-          <div ref={containerRef} className="w-full h-full" />
-  
-          {players && Object.keys(players).length > 0 && (
-            <div className="absolute right-4 top-4 bg-gray-800 p-4 rounded-lg">
-              <h3 className="text-white font-bold mb-2">Players</h3>
-              {Object.values(players).map(player => (
-                <div key={player.id} className="flex items-center gap-2 text-white">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: player.color }} />
-                  <span>{player.name}</span>
-                  <span className="ml-auto">{player.score || 0}</span>
-                </div>
-              ))}
-            </div>
-          )}
-  
-          {/* Camera controls overlay */}
-          <div className="absolute right-4 top-4 flex flex-col gap-2">
-            <button
-              onClick={handleZoomIn}
-              className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              title="Zoom In"
-            >
-              <ZoomIn className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleZoomOut}
-              className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              title="Zoom Out"
-            >
-              <ZoomOut className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleResetView}
-              className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              title="Reset View"
-            >
-              <Maximize2 className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleResetGame}
-              className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              title="Reset Puzzle"
-            >
-              <RotateCcw className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setShowThumbnail(!showThumbnail)}
-              className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              title="Toggle Reference Image"
-            >
-              <Image className="w-5 h-5" />
-            </button>
-          </div>
-  
-          {/* Loading overlay */}
-          {loading && (
-            <div className="absolute inset-0 flex items-center justify-center 
-                          bg-gray-900 bg-opacity-75 z-10">
-              <div className="text-xl text-white">Loading puzzle...</div>
-            </div>
-          )}
-  
-          {/* Thumbnail overlay */}
-          {showThumbnail && image && (
-            <div className="absolute left-4 top-4 p-2 bg-gray-800 rounded-lg shadow-lg">
-              <div className="relative">
-                <img
-                  src={image}
-                  alt="Reference"
-                  className="w-48 h-auto rounded border border-gray-600"
-                />
+
+        {/* Progress indicator */}
+        {totalPieces > 0 && (
+          <div className="flex items-center gap-4">
+            <div className="flex flex-col items-end">
+              <div className="text-sm text-gray-400">Progress</div>
+              <div className="text-lg font-bold text-white">
+                {completedPieces} / {totalPieces} pieces
               </div>
             </div>
-          )}
-        </div>
-        {winner && <WinnerNotification winner={winner} />}
-        {showShareModal && <ShareModal />}
+            <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-500 transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            {progress === 100 && (
+              <div className="flex items-center gap-2 text-green-400">
+                <Check className="w-5 h-5" />
+                <span>Complete! - {formatTime(timeElapsed)}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
-    );
-  };
+
+      {/* Main puzzle area */}
+      <div className="flex-1 relative">
+        <div ref={containerRef} className="w-full h-full" />
+
+        {players && Object.keys(players).length > 0 && (
+          <div className="absolute right-4 top-4 bg-gray-800 p-4 rounded-lg">
+            <h3 className="text-white font-bold mb-2">Players</h3>
+            {Object.values(players).map(player => (
+              <div key={player.id} className="flex items-center gap-2 text-white">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: player.color }} />
+                <span>{player.name}</span>
+                <span className="ml-auto">{player.score || 0}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Camera controls overlay */}
+        <div className="absolute right-4 top-4 flex flex-col gap-2">
+          <button
+            onClick={handleZoomIn}
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            title="Zoom In"
+          >
+            <ZoomIn className="w-5 h-5" />
+          </button>
+          <button
+            onClick={handleZoomOut}
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            title="Zoom Out"
+          >
+            <ZoomOut className="w-5 h-5" />
+          </button>
+          <button
+            onClick={handleResetView}
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            title="Reset View"
+          >
+            <Maximize2 className="w-5 h-5" />
+          </button>
+          <button
+            onClick={handleResetGame}
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            title="Reset Puzzle"
+          >
+            <RotateCcw className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setShowThumbnail(!showThumbnail)}
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            title="Toggle Reference Image"
+          >
+            <Image className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Loading overlay */}
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center 
+                        bg-gray-900 bg-opacity-75 z-10">
+            <div className="text-xl text-white">Loading puzzle...</div>
+          </div>
+        )}
+
+        {/* Thumbnail overlay */}
+        {showThumbnail && image && (
+          <div className="absolute left-4 top-4 p-2 bg-gray-800 rounded-lg shadow-lg">
+            <div className="relative">
+              <img
+                src={image}
+                alt="Reference"
+                className="w-48 h-auto rounded border border-gray-600"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+      {winner && <WinnerNotification winner={winner} />}
+      {showShareModal && <ShareModal />}
+    </div>
+  );
+};
 
 export default PuzzleGame;
