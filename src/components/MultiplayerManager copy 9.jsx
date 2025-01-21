@@ -145,20 +145,6 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
   const puzzlePiecesRef = useRef([]);
   const particleSystemRef = useRef(null);
 
-  // Add these utility functions at the top level
-  const SNAP_THRESHOLD = 0.2;
-  const ROTATION_STEP = Math.PI / 2;
-
-  const isNearCorrectPosition = (piece, position) => {
-    const dx = Math.abs(position.x - piece.userData.correctX);
-    const dy = Math.abs(position.y - piece.userData.correctY);
-    return dx < SNAP_THRESHOLD && dy < SNAP_THRESHOLD;
-  };
-
-  const normalizeRotation = (rotation) => {
-    return Math.round(rotation / ROTATION_STEP) * ROTATION_STEP;
-  };
-
   // Initialize game session
   useEffect(() => {
     const gameRef = dbRef(database, `games/${gameState.gameId}`);
@@ -233,11 +219,8 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
 
   // Update 3D puzzle pieces
   const updatePuzzlePieces = (piecesData) => {
-    // Convert piecesData object to array if needed
-    const piecesArray = Array.isArray(piecesData) ? piecesData : Object.values(piecesData);
-    
     puzzlePiecesRef.current.forEach(piece => {
-      const pieceData = piecesArray.find(p => p.id === piece.userData.id);
+      const pieceData = piecesData.find(p => p.id === piece.userData.id);
       if (pieceData && pieceData.lastUpdatedBy !== userId) {
         piece.position.copy(new THREE.Vector3(
           pieceData.position.x,
@@ -256,56 +239,11 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
   // Handle piece movement
   const handlePieceMove = async (piece, position, rotation) => {
     try {
-      let finalPosition = position.clone();
-      let finalRotation = piece.rotation.clone();
-      let isPlaced = false;
-  
-      // Check if piece is near its correct position
-      if (isNearCorrectPosition(piece, position)) {
-        finalPosition.x = piece.userData.correctX;
-        finalPosition.y = piece.userData.correctY;
-        finalPosition.z = 0;
-        
-        // Normalize rotation to nearest 90 degrees
-        finalRotation.z = normalizeRotation(finalRotation.z);
-        
-        // Check if rotation is correct (should be close to 0 or multiples of 2π)
-        if (Math.abs(finalRotation.z % (Math.PI * 2)) < 0.1) {
-          isPlaced = true;
-          // Emit particles on correct placement
-          particleSystemRef.current?.emit(finalPosition, 30);
-        }
-      }
-  
-      // Update piece state in Firebase
       await update(dbRef(database, `games/${gameState.gameId}/pieces/${piece.userData.id}`), {
-        position: {
-          x: finalPosition.x,
-          y: finalPosition.y,
-          z: finalPosition.z
-        },
-        rotation: {
-          x: finalRotation.x,
-          y: finalRotation.y,
-          z: finalRotation.z
-        },
-        isPlaced,
+        position: { x: position.x, y: position.y, z: position.z },
+        rotation: { x: rotation.x, y: rotation.y, z: rotation.z },
         lastUpdatedBy: userId
       });
-  
-      // Calculate and update progress
-      const placedPieces = pieces.filter(p => p.isPlaced).length;
-      const totalPieces = pieces.length;
-      const newProgress = (placedPieces / totalPieces) * 100;
-      setProgress(newProgress);
-  
-      // Check for game completion
-      if (newProgress === 100) {
-        await update(dbRef(database, `games/${gameState.gameId}`), {
-          gameStatus: 'completed',
-          endTime: Date.now()
-        });
-      }
     } catch (err) {
       console.error('Failed to update piece position:', err);
     }
@@ -407,33 +345,17 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
       }
     };
 
-    const handleKeyDown = (event) => {
-      if (event.key === 'r' && activePiece) {
-        handlePieceRotation(activePiece);
-      }
-    };
-
     const element = rendererRef.current.domElement;
     element.addEventListener('mousedown', handleMouseDown);
     element.addEventListener('mousemove', handleMouseMove);
     element.addEventListener('mouseup', handleMouseUp);
-    window.addEventListener('keydown', handleKeyDown);
 
     return () => {
       element.removeEventListener('mousedown', handleMouseDown);
       element.removeEventListener('mousemove', handleMouseMove);
       element.removeEventListener('mouseup', handleMouseUp);
-      window.removeEventListener('keydown', handleKeyDown);
     };
   }, [activePiece]);
-
-  // Add piece rotation handler
-  const handlePieceRotation = (piece) => {
-    if (piece) {
-      piece.rotation.z += ROTATION_STEP;
-      handlePieceMove(piece, piece.position, piece.rotation);
-    }
-  };
 
   // Handle game cleanup
   const cleanupGame = async () => {
@@ -456,53 +378,6 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
     } catch (err) {
       console.error('Failed to cleanup game:', err);
     }
-  };
-
-  // Add game state effect
-  useEffect(() => {
-    if (gameState.gameStatus === 'completed') {
-      // Clear timer
-      if (gameState.timerRef) {
-        clearInterval(gameState.timerRef);
-      }
-  
-      // Calculate final score
-      const timeBonus = Math.max(0, 1000 - gameState.timer);
-      const finalScore = timeBonus + (progress * 10);
-  
-      // Update player score
-      update(dbRef(database, `games/${gameState.gameId}/players/${userId}`), {
-        score: finalScore
-      });
-    }
-  }, [gameState.gameStatus]);
-
-  // Add Timer component
-  const Timer = () => {
-    const [time, setTime] = useState(0);
-  
-    useEffect(() => {
-      if (gameState.gameStatus === 'playing') {
-        const interval = setInterval(() => {
-          setTime(prev => prev + 1);
-        }, 1000);
-  
-        return () => clearInterval(interval);
-      }
-    }, [gameState.gameStatus]);
-  
-    const formatTime = (seconds) => {
-      const mins = Math.floor(seconds / 60);
-      const secs = seconds % 60;
-      return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    };
-  
-    return (
-      <div className="flex items-center gap-2 text-white">
-        <Clock className="w-5 h-5" />
-        <span>{formatTime(time)}</span>
-      </div>
-    );
   };
 
   // UI Components
@@ -711,7 +586,6 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
         </div>
 
         <div className="flex items-center gap-4">
-          <Timer />
           <div className="text-white">
             Players: {Object.keys(players).length}
           </div>
