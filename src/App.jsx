@@ -15,13 +15,15 @@ import { useParams } from 'react-router-dom';
 // Component for multiplayer puzzle view
 const MultiplayerPuzzle = () => {
   const { gameId } = useParams();
+  const isNewGame = !gameId.includes('join_');
+  const actualGameId = isNewGame ? gameId : gameId.replace('join_', '');
+
   return (
     <div className="puzzle-container">
       <MultiplayerManager 
-        gameId={gameId}
-        isHost={false}
+        gameId={actualGameId}
+        isHost={isNewGame}
         isMultiPlayer={true}
-        puzzleId={gameId}
       />
     </div>
   );

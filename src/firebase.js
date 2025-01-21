@@ -2,7 +2,6 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-// import { getDatabase, ref, set, onValue, update } from 'firebase/database';
 import { getDatabase, ref, set, onValue, update, remove, onDisconnect, push } from 'firebase/database';
 import { nanoid } from 'nanoid';
 
@@ -27,8 +26,21 @@ const storage = getStorage(app);
 const db = getFirestore(app);
 const database = getDatabase(app);
 
-
-
-export { auth, googleProvider, storage, app,remove,push, db, database, onDisconnect,  ref, set, onValue, update, nanoid };
+export { 
+  auth, 
+  googleProvider, 
+  storage, 
+  app, 
+  remove,
+  push, 
+  db, 
+  database, 
+  onDisconnect, 
+  ref, 
+  set, 
+  onValue, 
+  update, 
+  nanoid 
+};
 
 
