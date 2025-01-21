@@ -409,6 +409,10 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
       piece.position.y += (Math.random() - 0.5) * 2;
       piece.position.z += Math.random() * 0.5;
       piece.rotation.z = (Math.random() - 0.5) * 0.5;
+      piece.userData.isPlaced = false; // Ensure pieces start as not placed
+      if (piece.material.uniforms) {
+        piece.material.uniforms.correctPosition.value = 0;
+      }
     });
 
     // After creating pieces, if host, sync the initial piece positions
@@ -557,6 +561,7 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
     const mouse = new THREE.Vector2();
     let isDragging = false;
     let dragPlane = new THREE.Plane();
+    let dragOffset = new THREE.Vector3();
     
     const handleMouseDown = (event) => {
       event.preventDefault();
@@ -569,17 +574,29 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
       const intersects = raycaster.intersectObjects(puzzlePiecesRef.current);
 
       if (intersects.length > 0) {
+        const piece = intersects[0].object;
+        
+        // Don't allow dragging if piece is already correctly placed
+        if (piece.userData.isPlaced) {
+          return;
+        }
+
         isDragging = true;
-        selectedPieceRef.current = intersects[0].object;
+        selectedPieceRef.current = piece;
         controlsRef.current.enabled = false;
 
-        selectedPieceRef.current.material.uniforms.selected.value = 1.0;
-        
-        const normal = new THREE.Vector3(0, 0, 1);
-        dragPlane.setFromNormalAndCoplanarPoint(
-          normal,
-          selectedPieceRef.current.position
+        // Calculate drag offset
+        const intersectPoint = new THREE.Vector3();
+        raycaster.ray.intersectPlane(
+          new THREE.Plane(new THREE.Vector3(0, 0, 1)),
+          intersectPoint
         );
+        dragOffset.subVectors(selectedPieceRef.current.position, intersectPoint);
+
+        // Update shader uniforms
+        if (selectedPieceRef.current.material.uniforms) {
+          selectedPieceRef.current.material.uniforms.selected.value = 1.0;
+        }
       }
     };
 
@@ -592,9 +609,13 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
 
       raycaster.setFromCamera(mouse, cameraRef.current);
       const intersectPoint = new THREE.Vector3();
-      raycaster.ray.intersectPlane(dragPlane, intersectPoint);
+      raycaster.ray.intersectPlane(
+        new THREE.Plane(new THREE.Vector3(0, 0, 1)),
+        intersectPoint
+      );
       
-      selectedPieceRef.current.position.copy(intersectPoint);
+      // Apply the original offset to maintain grab point
+      selectedPieceRef.current.position.copy(intersectPoint.add(dragOffset));
       
       // Sync piece movement with other players
       syncPieceMovement(selectedPieceRef.current);
@@ -603,31 +624,37 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
     const handleMouseUp = () => {
       if (!selectedPieceRef.current) return;
 
+      isDragging = false;
       const originalPos = selectedPieceRef.current.userData.originalPosition;
       const distance = originalPos.distanceTo(selectedPieceRef.current.position);
 
-      if (distance < 0.3) {
+      if (distance < 0.3 && !selectedPieceRef.current.userData.isPlaced) {
         selectedPieceRef.current.position.copy(originalPos);
         selectedPieceRef.current.rotation.z = 0;
+        selectedPieceRef.current.userData.isPlaced = true;
         
-        if (!selectedPieceRef.current.userData.isPlaced) {
-          selectedPieceRef.current.userData.isPlaced = true;
-          setCompletedPieces(prev => {
-            const newCount = prev + 1;
-            setProgress((newCount / totalPieces) * 100);
-            return newCount;
-          });
+        // Sync the final position
+        syncPieceMovement(selectedPieceRef.current);
+        
+        // Only increment completed pieces if this is a newly placed piece
+        setCompletedPieces(prev => {
+          const newCount = prev + 1;
+          setProgress((newCount / totalPieces) * 100);
+          return newCount;
+        });
 
+        if (particleSystemRef.current) {
           particleSystemRef.current.emit(selectedPieceRef.current.position, 30);
         }
       }
 
-      selectedPieceRef.current.material.uniforms.selected.value = 0.0;
-      selectedPieceRef.current.material.uniforms.correctPosition.value = 
-        selectedPieceRef.current.userData.isPlaced ? 1.0 : 0.0;
+      if (selectedPieceRef.current.material.uniforms) {
+        selectedPieceRef.current.material.uniforms.selected.value = 0.0;
+        selectedPieceRef.current.material.uniforms.correctPosition.value = 
+          selectedPieceRef.current.userData.isPlaced ? 1.0 : 0.0;
+      }
       
       selectedPieceRef.current = null;
-      isDragging = false;
       controlsRef.current.enabled = true;
     };
 
@@ -828,6 +855,28 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
 
     return () => imageListener();
   }, [gameId, currentUser, isHost]);
+
+  // Modify syncPieceMovement function first
+  // const syncPieceMovement = async (piece) => {
+  //   if (!gameId || !currentUser) return;
+  //   try {
+  //     await update(ref(database, `games/${gameId}/puzzle/pieces/${piece.userData.id}`), {
+  //       position: {
+  //         x: piece.position.x,
+  //         y: piece.position.y,
+  //         z: piece.position.z
+  //       },
+  //       rotation: piece.rotation.z,
+  //       isPlaced: piece.userData.isPlaced,
+  //       lastMoved: {
+  //         by: currentUser.uid,
+  //         at: Date.now()
+  //       }
+  //     });
+  //   } catch (error) {
+  //     setError(error.message);
+  //   }
+  // };
 
   return (
     <div className="w-full h-screen flex flex-col bg-gray-900">
