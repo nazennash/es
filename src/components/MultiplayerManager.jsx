@@ -169,7 +169,7 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
         const data = snapshot.val();
         
         if (!data) {
-          // New game setup
+          // New game setup - only for host
           await set(gameRef, {
             players: {
               [userId]: {
@@ -185,16 +185,23 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
             pieces: []
           });
         } else {
-          // Join existing game
-          await update(gameRef, {
-            [`players/${userId}`]: {
-              id: userId,
-              name: userName,
-              score: 0,
-              color: `#${Math.floor(Math.random()*16777215).toString(16)}`,
-              isHost: false
-            }
-          });
+          // Join existing game - append new player
+          const updates = {};
+          updates[`players/${userId}`] = {
+            id: userId,
+            name: userName,
+            score: 0,
+            color: `#${Math.floor(Math.random()*16777215).toString(16)}`,
+            isHost: false
+          };
+          
+          // Only update player data, preserve existing game state
+          await update(gameRef, updates);
+          
+          // If game is already in progress, sync the pieces
+          if (data.pieces && data.gameStatus === 'playing') {
+            updatePuzzlePieces(data.pieces);
+          }
         }
       } catch (err) {
         console.error('Failed to initialize game:', err);
@@ -205,7 +212,21 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
     const unsubscribe = onValue(gameRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        updateGameState(data);
+        // Preserve local player's host status
+        const currentPlayerData = data.players?.[userId];
+        setGameState(prev => ({
+          ...prev,
+          imageUrl: data.imageUrl || '',
+          gameStatus: data.gameStatus || 'waiting',
+          isHost: currentPlayerData?.isHost || false
+        }));
+        
+        setPlayers(data.players || {});
+        
+        if (data.pieces) {
+          setPieces(data.pieces);
+          updatePuzzlePieces(data.pieces);
+        }
       }
     });
 
@@ -231,35 +252,48 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
     }
   };
 
-  // Update 3D puzzle pieces
+  // Update puzzle pieces with better sync
   const updatePuzzlePieces = (piecesData) => {
-    // Convert piecesData object to array if needed
     const piecesArray = Array.isArray(piecesData) ? piecesData : Object.values(piecesData);
     
     puzzlePiecesRef.current.forEach(piece => {
       const pieceData = piecesArray.find(p => p.id === piece.userData.id);
-      if (pieceData && pieceData.lastUpdatedBy !== userId) {
-        piece.position.copy(new THREE.Vector3(
-          pieceData.position.x,
-          pieceData.position.y,
-          pieceData.position.z
-        ));
-        piece.rotation.copy(new THREE.Euler(
-          pieceData.rotation.x,
-          pieceData.rotation.y,
-          pieceData.rotation.z
-        ));
+      if (pieceData) {
+        // Only update if the piece was moved by another player
+        if (pieceData.lastUpdatedBy !== userId) {
+          piece.position.set(
+            pieceData.position.x,
+            pieceData.position.y,
+            pieceData.position.z
+          );
+          piece.rotation.set(
+            pieceData.rotation.x,
+            pieceData.rotation.y,
+            pieceData.rotation.z
+          );
+          
+          // Update material uniforms for visual feedback
+          if (piece.material.uniforms) {
+            piece.material.uniforms.correctPosition.value = pieceData.isPlaced ? 1.0 : 0.0;
+            piece.material.uniforms.selected.value = 0.0;
+          }
+        }
+        
+        // Update piece state
+        piece.userData.isPlaced = pieceData.isPlaced;
       }
     });
   };
 
-  // Handle piece movement
+  // Enhanced piece movement handler
   const handlePieceMove = async (piece, position, rotation) => {
     try {
-      let finalPosition = position.clone();
-      let finalRotation = piece.rotation.clone();
+      if (!piece || gameState.gameStatus !== 'playing') return;
+
+      const finalPosition = position.clone();
+      const finalRotation = piece.rotation.clone();
       let isPlaced = false;
-  
+
       // Check if piece is near its correct position
       if (isNearCorrectPosition(piece, position)) {
         finalPosition.x = piece.userData.correctX;
@@ -269,16 +303,21 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
         // Normalize rotation to nearest 90 degrees
         finalRotation.z = normalizeRotation(finalRotation.z);
         
-        // Check if rotation is correct (should be close to 0 or multiples of 2π)
+        // Check if rotation is correct
         if (Math.abs(finalRotation.z % (Math.PI * 2)) < 0.1) {
           isPlaced = true;
-          // Emit particles on correct placement
           particleSystemRef.current?.emit(finalPosition, 30);
         }
       }
-  
+
+      // Update piece position locally first for responsiveness
+      piece.position.copy(finalPosition);
+      piece.rotation.copy(finalRotation);
+
       // Update piece state in Firebase
-      await update(dbRef(database, `games/${gameState.gameId}/pieces/${piece.userData.id}`), {
+      const pieceRef = dbRef(database, `games/${gameState.gameId}/pieces/${piece.userData.id}`);
+      await set(pieceRef, {
+        id: piece.userData.id,
         position: {
           x: finalPosition.x,
           y: finalPosition.y,
@@ -290,16 +329,15 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
           z: finalRotation.z
         },
         isPlaced,
-        lastUpdatedBy: userId
+        lastUpdatedBy: userId,
+        timestamp: Date.now()
       });
-  
-      // Calculate and update progress
-      const placedPieces = pieces.filter(p => p.isPlaced).length;
-      const totalPieces = pieces.length;
-      const newProgress = (placedPieces / totalPieces) * 100;
+
+      // Update progress
+      const placedPieces = puzzlePiecesRef.current.filter(p => p.userData.isPlaced).length;
+      const newProgress = (placedPieces / puzzlePiecesRef.current.length) * 100;
       setProgress(newProgress);
-  
-      // Check for game completion
+
       if (newProgress === 100) {
         await update(dbRef(database, `games/${gameState.gameId}`), {
           gameStatus: 'completed',
