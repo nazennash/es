@@ -175,7 +175,10 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
     gameState: multiplayerGameState, 
     error, 
     updatePiecePosition, 
-    updateGameState 
+    updateGameState,
+    syncPuzzleState,  // Add this line
+    syncPieceState,   // Add this line if needed
+    syncPieceMovement // Add this line if needed
   } = useMultiplayerGame(propGameId);
 
   // Add currentUser from auth
@@ -407,6 +410,28 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
       piece.position.z += Math.random() * 0.5;
       piece.rotation.z = (Math.random() - 0.5) * 0.5;
     });
+
+    // After creating pieces, if host, sync the initial piece positions
+    if (isHost) {
+      const piecesData = {};
+      puzzlePiecesRef.current.forEach((piece, index) => {
+        piecesData[`piece_${index}`] = {
+          id: `piece_${index}`,
+          position: {
+            x: piece.position.x,
+            y: piece.position.y,
+            z: piece.position.z
+          },
+          rotation: piece.rotation.z,
+          isPlaced: piece.userData.isPlaced,
+          gridPosition: piece.userData.gridPosition
+        };
+        // Add the id to the piece's userData for future reference
+        piece.userData.id = `piece_${index}`;
+      });
+
+      await syncPieceState(piecesData);
+    }
   };
 
   // Initialize Three.js scene
@@ -571,15 +596,8 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
       
       selectedPieceRef.current.position.copy(intersectPoint);
       
-      const originalPos = selectedPieceRef.current.userData.originalPosition;
-      const distance = originalPos.distanceTo(selectedPieceRef.current.position);
-      
-      if (distance < 0.3) {
-        selectedPieceRef.current.material.uniforms.correctPosition.value = 
-          1.0 - (distance / 0.3);
-      } else {
-        selectedPieceRef.current.material.uniforms.correctPosition.value = 0.0;
-      }
+      // Sync piece movement with other players
+      syncPieceMovement(selectedPieceRef.current);
     };
 
     const handleMouseUp = () => {
@@ -630,18 +648,29 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
   // Handle image upload
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
-    if (!file) return;
-
+    if (!file || !isHost) return;
+  
     setLoading(true);
     const reader = new FileReader();
-    reader.onload = (e) => {
-      setImage(e.target.result);
-      createPuzzlePieces(e.target.result).then(() => {
-        setLoading(false);
-        setIsTimerRunning(false);
-        setCompletedPieces(0);
-        setProgress(0);
+    reader.onload = async (e) => {
+      const imageData = e.target.result;
+      setImage(imageData);
+      
+      // First sync the image with other players
+      await syncPuzzleState({
+        imageUrl: imageData,
+        createdAt: Date.now(),
+        settings: {
+          gridSize: { x: 4, y: 3 } // You can make this configurable
+        }
       });
+  
+      // Then create puzzle pieces
+      await createPuzzlePieces(imageData);
+      setLoading(false);
+      setIsTimerRunning(false);
+      setCompletedPieces(0);
+      setProgress(0);
     };
     reader.readAsDataURL(file);
   };
@@ -683,7 +712,7 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
       const data = snapshot.val();
       if (data) {
         setGameState(data);
-        setPlayers(data.players || {});
+        // setPlayers(data.players || {});
       }
     });
 
@@ -733,6 +762,72 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
       timestamp: Date.now()
     });
   };
+
+  // Add listener for piece updates from other players
+  useEffect(() => {
+    if (!gameId || !multiplayerGameState?.puzzle?.pieces) return;
+
+    const pieces = multiplayerGameState.puzzle.pieces;
+    Object.entries(pieces).forEach(([pieceId, pieceData]) => {
+      const piece = puzzlePiecesRef.current.find(p => p.userData.id === pieceId);
+      if (piece && pieceData.lastMoved?.by !== currentUser.uid) {
+        piece.position.set(
+          pieceData.position.x,
+          pieceData.position.y,
+          pieceData.position.z
+        );
+        piece.rotation.z = pieceData.rotation;
+        piece.userData.isPlaced = pieceData.isPlaced;
+        piece.material.uniforms.correctPosition.value = pieceData.isPlaced ? 1.0 : 0.0;
+      }
+    });
+  }, [multiplayerGameState?.puzzle?.pieces, currentUser.uid]);
+
+  // Sync initial puzzle state when host uploads image
+  useEffect(() => {
+    if (isHost && image) {
+      syncPuzzleState({
+        imageUrl: image,
+        createdAt: Date.now(),
+        pieces: puzzlePiecesRef.current.map(piece => ({
+          id: piece.userData.id,
+          position: {
+            x: piece.position.x,
+            y: piece.position.y,
+            z: piece.position.z
+          },
+          rotation: piece.rotation.z,
+          isPlaced: piece.userData.isPlaced
+        }))
+      });
+    }
+  }, [isHost, image]);
+
+  // Load puzzle state for non-host players
+  useEffect(() => {
+    if (!isHost && multiplayerGameState?.puzzle?.imageUrl) {
+      setImage(multiplayerGameState.puzzle.imageUrl);
+      createPuzzlePieces(multiplayerGameState.puzzle.imageUrl);
+    }
+  }, [isHost, multiplayerGameState?.puzzle?.imageUrl]);
+
+  // Add image sync listener for non-host players
+  useEffect(() => {
+    if (!gameId || !currentUser || isHost) return;
+
+    const puzzleRef = ref(database, `games/${gameId}/puzzle`);
+    const imageListener = onValue(puzzleRef, async (snapshot) => {
+      const puzzleData = snapshot.val();
+      if (puzzleData?.imageUrl && puzzleData.imageUrl !== image) {
+        setLoading(true);
+        setImage(puzzleData.imageUrl);
+        await createPuzzlePieces(puzzleData.imageUrl);
+        setLoading(false);
+      }
+    });
+
+    return () => imageListener();
+  }, [gameId, currentUser, isHost]);
 
   return (
     <div className="w-full h-screen flex flex-col bg-gray-900">

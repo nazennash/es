@@ -91,11 +91,69 @@ export const useMultiplayerGame = (gameId) => {
     }
   };
 
+  const syncPieceState = async (pieces) => {
+    if (!gameId || !currentUser) return;
+    try {
+      await update(ref(database, `games/${gameId}/puzzle/pieces`), pieces);
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+
+  const syncImageState = async (imageData) => {
+    if (!gameId || !currentUser) return;
+    await update(ref(database, `games/${gameId}/puzzle`), {
+      image: imageData,
+      lastUpdated: Date.now()
+    });
+  };
+
+  const syncPuzzleState = async (puzzleData) => {
+    if (!gameId || !currentUser) return;
+    try {
+      // Ensure atomic updates by using a transaction
+      await set(ref(database, `games/${gameId}/puzzle`), {
+        ...puzzleData,
+        lastUpdated: Date.now(),
+        updatedBy: currentUser.uid,
+        // Add a random session ID to force refresh on re-upload
+        sessionId: Math.random().toString(36).substring(7)
+      });
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+
+  const syncPieceMovement = async (piece) => {
+    if (!gameId || !currentUser) return;
+    try {
+      await update(ref(database, `games/${gameId}/puzzle/pieces/${piece.id}`), {
+        position: {
+          x: piece.position.x,
+          y: piece.position.y,
+          z: piece.position.z
+        },
+        rotation: piece.rotation.z,
+        isPlaced: piece.userData.isPlaced,
+        lastMoved: {
+          by: currentUser.uid,
+          at: Date.now()
+        }
+      });
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+
   return {
     players,
     gameState,
     error,
     updatePiecePosition,
-    updateGameState
+    updateGameState,
+    syncPieceState,
+    syncImageState,
+    syncPuzzleState,
+    syncPieceMovement
   };
 };
