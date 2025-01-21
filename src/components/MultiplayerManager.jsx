@@ -121,18 +121,44 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
   const userId = userData?.uid || `user-${Date.now()}`;
   const userName = userData?.displayName || userData?.email || `Player ${Math.floor(Math.random() * 1000)}`;
 
-  // State management
-  const [gameState, setGameState] = useState({
-    gameId: gameId || `game-${Date.now()}`,
-    imageUrl: '',
-    isHost: isHost || false,
-    difficulty: 3,
-    timer: 0,
-    gameStatus: 'waiting' // 'waiting', 'playing', 'paused', 'completed'
+  // Enhanced state management with localStorage
+  const [gameState, setGameState] = useState(() => {
+    const savedState = localStorage.getItem(`puzzle_state_${gameId}`);
+    return savedState ? JSON.parse(savedState) : {
+      gameId: gameId || `game-${Date.now()}`,
+      imageUrl: '',
+      isHost: isHost || false,
+      difficulty: 3,
+      timer: 0,
+      gameStatus: 'waiting' // 'waiting', 'playing', 'paused', 'completed'
+    };
   });
 
-  const [pieces, setPieces] = useState([]);
-  const [players, setPlayers] = useState({});
+  // Save game state to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem(`puzzle_state_${gameId}`, JSON.stringify(gameState));
+  }, [gameState, gameId]);
+
+  // Add piece position caching
+  const [pieces, setPieces] = useState(() => {
+    const savedPieces = localStorage.getItem(`puzzle_pieces_${gameId}`);
+    return savedPieces ? JSON.parse(savedPieces) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem(`puzzle_pieces_${gameId}`, JSON.stringify(pieces));
+  }, [pieces, gameId]);
+
+  // Add player state caching
+  const [players, setPlayers] = useState(() => {
+    const savedPlayers = localStorage.getItem(`puzzle_players_${gameId}`);
+    return savedPlayers ? JSON.parse(savedPlayers) : {};
+  });
+
+  useEffect(() => {
+    localStorage.setItem(`puzzle_players_${gameId}`, JSON.stringify(players));
+  }, [players, gameId]);
+
   const [activePiece, setActivePiece] = useState(null);
   const [progress, setProgress] = useState(0);
 
@@ -212,21 +238,24 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
     const unsubscribe = onValue(gameRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        // Preserve local player's host status
-        const currentPlayerData = data.players?.[userId];
-        setGameState(prev => ({
-          ...prev,
-          imageUrl: data.imageUrl || '',
-          gameStatus: data.gameStatus || 'waiting',
-          isHost: currentPlayerData?.isHost || false
-        }));
+        // Compare with local cache before updating
+        const localState = localStorage.getItem(`puzzle_state_${gameId}`);
+        const localPieces = localStorage.getItem(`puzzle_pieces_${gameId}`);
         
-        setPlayers(data.players || {});
-        
-        if (data.pieces) {
-          setPieces(data.pieces);
+        if (!localState || data.timestamp > JSON.parse(localState).timestamp) {
+          setGameState(prev => ({
+            ...prev,
+            ...data,
+            isHost: prev.isHost // Preserve host status
+          }));
+        }
+
+        if (!localPieces || data.pieces?.timestamp > JSON.parse(localPieces).timestamp) {
+          setPieces(data.pieces || []);
           updatePuzzlePieces(data.pieces);
         }
+
+        setPlayers(data.players || {});
       }
     });
 
@@ -285,7 +314,7 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
     });
   };
 
-  // Enhanced piece movement handler
+  // Enhanced piece movement handler with local caching
   const handlePieceMove = async (piece, position, rotation) => {
     try {
       if (!piece || gameState.gameStatus !== 'playing') return;
@@ -310,13 +339,8 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
         }
       }
 
-      // Update piece position locally first for responsiveness
-      piece.position.copy(finalPosition);
-      piece.rotation.copy(finalRotation);
-
-      // Update piece state in Firebase
-      const pieceRef = dbRef(database, `games/${gameState.gameId}/pieces/${piece.userData.id}`);
-      await set(pieceRef, {
+      // Update piece locally first
+      const updatedPiece = {
         id: piece.userData.id,
         position: {
           x: finalPosition.x,
@@ -331,7 +355,18 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
         isPlaced,
         lastUpdatedBy: userId,
         timestamp: Date.now()
-      });
+      };
+
+      // Update local cache
+      const updatedPieces = pieces.map(p => 
+        p.id === updatedPiece.id ? updatedPiece : p
+      );
+      setPieces(updatedPieces);
+      localStorage.setItem(`puzzle_pieces_${gameId}`, JSON.stringify(updatedPieces));
+
+      // Then update Firebase
+      const pieceRef = dbRef(database, `games/${gameState.gameId}/pieces/${piece.userData.id}`);
+      await set(pieceRef, updatedPiece);
 
       // Update progress
       const placedPieces = puzzlePiecesRef.current.filter(p => p.userData.isPlaced).length;
@@ -473,9 +508,13 @@ const MultiplayerPuzzle = ({ gameId, isHost }) => {
     }
   };
 
-  // Handle game cleanup
+  // Cleanup localStorage on game end
   const cleanupGame = async () => {
     try {
+      localStorage.removeItem(`puzzle_state_${gameId}`);
+      localStorage.removeItem(`puzzle_pieces_${gameId}`);
+      localStorage.removeItem(`puzzle_players_${gameId}`);
+      
       const updates = {};
       updates[`games/${gameState.gameId}/players/${userId}`] = null;
       await update(dbRef(database), updates);

@@ -19,7 +19,7 @@ const MultiplayerPuzzle = () => {
     <div className="puzzle-container">
       <MultiplayerManager 
         gameId={gameId}
-        isHost={true}
+        isHost={false}
         isMultiPlayer={true}
         puzzleId={gameId}
       />

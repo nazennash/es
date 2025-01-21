@@ -8,7 +8,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
 import { gsap } from 'gsap';
 import confetti from 'canvas-confetti';
-import FirebaseService from '../../FirebaseService';
+import FirebaseService from '../../../FirebaseService';
 
 const GAME_MODES = {
   CLASSIC: 'classic',
