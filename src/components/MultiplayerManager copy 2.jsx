@@ -1,788 +1,1337 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getDatabase, ref as dbRef, set, onValue, update, get } from 'firebase/database';
+import { ZoomIn, ZoomOut, RotateCw, RotateCcw, Share2, Play, Users, Download } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { LogOut, Home } from 'lucide-react';
+import { handlePuzzleCompletion, isPuzzleComplete } from './PuzzleCompletionHandler';
+import { Bar } from 'react-chartjs-2';
+import 'chart.js/auto';
+import html2canvas from 'html2canvas';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
-import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, Play, Pause, Share, Users } from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, set, onValue, remove, update, push, onDisconnect } from 'firebase/database';
-import { v4 as uuidv4 } from 'uuid';
+// use memo
+import { useMemo } from 'react';
+import { useThree } from '@react-three/fiber';
 
-// Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyAuzyxG9Cs1ma9chjR-uJZegoMAc1Vp2Ig",
-  authDomain: "nash-ac5c0.firebaseapp.com",
-  projectId: "nash-ac5c0",
-  storageBucket: "nash-ac5c0.firebasestorage.app",
-  messagingSenderId: "49955314335",
-  appId: "1:49955314335:web:e12140aa04351c658060aa",
-  measurementId: "G-Y1LW4LFGR2",
-  databaseURL: "https://nash-ac5c0-default-rtdb.firebaseio.com/",
-};
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const database = getDatabase(app);
-
-// Difficulty presets
-const DIFFICULTY_SETTINGS = {
-  easy: { grid: { x: 3, y: 2 }, snapDistance: 0.4, rotationEnabled: false },
-  medium: { grid: { x: 4, y: 3 }, snapDistance: 0.3, rotationEnabled: true },
-  hard: { grid: { x: 5, y: 4 }, snapDistance: 0.2, rotationEnabled: true },
-  expert: { grid: { x: 6, y: 5 }, snapDistance: 0.15, rotationEnabled: true }
-};
-
-// Achievement definitions and Sound System class remain the same
-// Achievement definitions
-const ACHIEVEMENTS = [
-  { id: 'speed_demon', name: 'Speed Demon', description: 'Complete puzzle under 2 minutes', icon: '⚡' },
-  { id: 'perfectionist', name: 'Perfectionist', description: 'Complete without misplacing pieces', icon: '✨' },
-  { id: 'persistent', name: 'Persistent', description: 'Complete on expert difficulty', icon: '🏆' }
-];
-
-// Sound System Class
-class SoundSystem {
-  constructor() {
-    this.context = new (window.AudioContext || window.webkitAudioContext)();
-    this.sounds = {};
-    this.enabled = true;
-  }
-
-  async initialize() {
-    this.sounds.pickup = this.createToneBuffer(440, 0.1);
-    this.sounds.place = this.createToneBuffer(880, 0.15);
-    this.sounds.complete = this.createToneBuffer([523.25, 659.25, 783.99], 0.3);
-  }
-
-  createToneBuffer(frequency, duration) {
-    const sampleRate = this.context.sampleRate;
-    const buffer = this.context.createBuffer(1, duration * sampleRate, sampleRate);
-    const data = buffer.getChannelData(0);
-    const frequencies = Array.isArray(frequency) ? frequency : [frequency];
-
-    for (let i = 0; i < buffer.length; i++) {
-      let sample = 0;
-      frequencies.forEach(freq => {
-        sample += Math.sin(2 * Math.PI * freq * i / sampleRate);
-      });
-      data[i] = sample / frequencies.length * Math.exp(-3 * i / buffer.length);
-    }
-    return buffer;
-  }
-
-  play(soundName) {
-    if (!this.enabled || !this.sounds[soundName]) return;
-    const source = this.context.createBufferSource();
-    source.buffer = this.sounds[soundName];
-    source.connect(this.context.destination);
-    source.start();
-  }
-
-  toggle() {
-    this.enabled = !this.enabled;
-    return this.enabled;
-  }
-}
-
-// Add near the top of the file
-class ParticleSystem {
-  constructor(scene) {
-    this.particles = [];
-    this.scene = scene;
+// Add new utility function for image splitting
+const splitImage = async (imageUrl, difficulty) => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "Anonymous";  // Handle CORS
     
-    const geometry = new THREE.BufferGeometry();
-    const material = new THREE.PointsMaterial({
-      size: 0.05,
-      map: new THREE.TextureLoader().load('/api/placeholder/32/32'),
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false
-    });
-    
-    this.particleSystem = new THREE.Points(geometry, material);
-    scene.add(this.particleSystem);
-  }
-  
-  // ... rest of the ParticleSystem implementation ...
-}
-const PuzzleGame = () => {
-  // Additional state for multiplayer
-  const [gameId, setGameId] = useState(null);
-  const [playerId, setPlayerId] = useState(null);
-  const [players, setPlayers] = useState({});
-  const [isHost, setIsHost] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
-  
-  // Previous state management code remains the same
-  // State management
-const [image, setImage] = useState(null);
-const [loading, setLoading] = useState(false);
-const [progress, setProgress] = useState(0);
-const [completedPieces, setCompletedPieces] = useState(0);
-const [totalPieces, setTotalPieces] = useState(0);
-const [timeElapsed, setTimeElapsed] = useState(0);
-const [isTimerRunning, setIsTimerRunning] = useState(false);
-const [gameState, setGameState] = useState('initial'); // 'initial', 'playing', 'paused'
-const [showThumbnail, setShowThumbnail] = useState(false);
-
-
-// Refs
-const containerRef = useRef(null);
-const sceneRef = useRef(null);
-const cameraRef = useRef(null);
-const rendererRef = useRef(null);
-const composerRef = useRef(null);
-const controlsRef = useRef(null);
-const clockRef = useRef(new THREE.Clock());
-const particleSystemRef = useRef(null);
-const puzzlePiecesRef = useRef([]);
-const selectedPieceRef = useRef(null);
-const timerRef = useRef(null);
-const guideOutlinesRef = useRef([]);
-const isDragging = useRef(false);
-
-const defaultCameraPosition = { x: 0, y: 0, z: 5 };
-const defaultControlsTarget = new THREE.Vector3(0, 0, 0);
-
-// Add near the top with other state/ref declarations
-const raycaster = useRef(new THREE.Raycaster());
-const mouse = useRef(new THREE.Vector2());
-const dragPlane = useRef(new THREE.Plane());
-
-  // Create a new multiplayer game session
-  const createMultiplayerGame = async () => {
-    const newGameId = uuidv4();
-    const newPlayerId = uuidv4();
-    
-    setGameId(newGameId);
-    setPlayerId(newPlayerId);
-    setIsHost(true);
-    
-    const gameRef = ref(database, `games/${newGameId}`);
-    await set(gameRef, {
-      state: 'waiting',
-      host: newPlayerId,
-      created: Date.now(),
-      players: {
-        [newPlayerId]: {
-          id: newPlayerId,
-          name: `Player ${Object.keys(players).length + 1}`,
-          isHost: true,
-          lastActive: Date.now()
-        }
-      },
-      puzzle: {
-        difficulty: 'medium',
-        pieces: [],
-        completedPieces: 0,
-        totalPieces: 0
-      }
-    });
-    
-    // Setup disconnect cleanup
-    const playerRef = ref(database, `games/${newGameId}/players/${newPlayerId}`);
-    onDisconnect(playerRef).remove();
-    
-    setShowShareModal(true);
-  };
-
-  // Join an existing multiplayer game
-  const joinMultiplayerGame = async (gameId) => {
-    const newPlayerId = uuidv4();
-    setPlayerId(newPlayerId);
-    setGameId(gameId);
-    
-    const playerRef = ref(database, `games/${gameId}/players/${newPlayerId}`);
-    await set(playerRef, {
-      id: newPlayerId,
-      name: `Player ${Object.keys(players).length + 1}`,
-      isHost: false,
-      lastActive: Date.now()
-    });
-    
-    // Setup disconnect cleanup
-    onDisconnect(playerRef).remove();
-  };
-
-  // Leave multiplayer game
-  const leaveMultiplayerGame = async () => {
-    if (!gameId || !playerId) return;
-    
-    const playerRef = ref(database, `games/${gameId}/players/${playerId}`);
-    await remove(playerRef);
-    
-    if (isHost) {
-      const gameRef = ref(database, `games/${gameId}`);
-      await remove(gameRef);
-    }
-    
-    setGameId(null);
-    setPlayerId(null);
-    setIsHost(false);
-    setPlayers({});
-  };
-
-  // Sync game state with Firebase
-  useEffect(() => {
-    if (!gameId) return;
-    
-    const gameRef = ref(database, `games/${gameId}`);
-    const unsubscribe = onValue(gameRef, (snapshot) => {
-      const gameData = snapshot.val();
-      if (!gameData) return;
+    img.onload = () => {
+      const pieces = [];
+      const pieceWidth = img.width / difficulty;
+      const pieceHeight = img.height / difficulty;
       
-      setPlayers(gameData.players || {});
+      // Create temporary canvas for image manipulation
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
       
-      // Sync puzzle state
-      if (gameData.puzzle) {
-        // Update puzzle pieces positions and states
-        puzzlePiecesRef.current.forEach((piece, index) => {
-          if (gameData.puzzle.pieces[index]) {
-            const pieceData = gameData.puzzle.pieces[index];
-            piece.position.copy(new THREE.Vector3(
-              pieceData.position.x,
-              pieceData.position.y,
-              pieceData.position.z
-            ));
-            piece.rotation.z = pieceData.rotation;
-            piece.userData.isPlaced = pieceData.isPlaced;
-            if (piece.material.uniforms) {
-              piece.material.uniforms.correctPosition.value = pieceData.isPlaced ? 1.0 : 0.0;
-            }
-          }
-        });
-        
-        setCompletedPieces(gameData.puzzle.completedPieces);
-        setProgress((gameData.puzzle.completedPieces / gameData.puzzle.totalPieces) * 100);
-      }
-      
-      if (gameData.state) {
-        setGameState(gameData.state);
-        setIsTimerRunning(gameData.state === 'playing');
-      }
-    });
-    
-    return () => unsubscribe();
-  }, [gameId]);
-
-  // Update piece positions in Firebase
-  const updatePiecePosition = async (piece, index) => {
-    if (!gameId) return;
-    
-    const pieceRef = ref(database, `games/${gameId}/puzzle/pieces/${index}`);
-    await update(pieceRef, {
-      position: {
-        x: piece.position.x,
-        y: piece.position.y,
-        z: piece.position.z
-      },
-      rotation: piece.rotation.z,
-      isPlaced: piece.userData.isPlaced
-    });
-  };
-
-  // Modified handleMouseMove to sync piece positions
-  const handleMouseMove = (event) => {
-    if (!isDragging || !selectedPieceRef.current) return;
-    
-    // Previous mouse move logic...
-    const rect = rendererRef.current.domElement.getBoundingClientRect();
-mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-raycaster.setFromCamera(mouse, cameraRef.current);
-const intersectPoint = new THREE.Vector3();
-raycaster.ray.intersectPlane(dragPlane, intersectPoint);
-
-selectedPieceRef.current.position.copy(intersectPoint);
-
-const originalPos = selectedPieceRef.current.userData.originalPosition;
-const distance = originalPos.distanceTo(selectedPieceRef.current.position);
-
-if (distance < 0.3) {
-  selectedPieceRef.current.material.uniforms.correctPosition.value = 
-    1.0 - (distance / 0.3);
-} else {
-  selectedPieceRef.current.material.uniforms.correctPosition.value = 0.0;
-}
-    
-    // Sync position with Firebase
-    const pieceIndex = puzzlePiecesRef.current.indexOf(selectedPieceRef.current);
-    updatePiecePosition(selectedPieceRef.current, pieceIndex);
-  };
-
-  // Modified handleMouseUp to sync final piece position
-  const handleMouseUp = () => {
-    if (!selectedPieceRef.current) return;
-    
-    // Previous mouse up logic...
-    const originalPos = selectedPieceRef.current.userData.originalPosition;
-const distance = originalPos.distanceTo(selectedPieceRef.current.position);
-
-if (distance < 0.3) {
-  selectedPieceRef.current.position.copy(originalPos);
-  selectedPieceRef.current.rotation.z = 0;
-  
-  if (!selectedPieceRef.current.userData.isPlaced) {
-    selectedPieceRef.current.userData.isPlaced = true;
-    setCompletedPieces(prev => {
-      const newCount = prev + 1;
-      setProgress((newCount / totalPieces) * 100);
-      return newCount;
-    });
-
-    particleSystemRef.current.emit(selectedPieceRef.current.position, 30);
-  }
-}
-
-selectedPieceRef.current.material.uniforms.selected.value = 0.0;
-selectedPieceRef.current.material.uniforms.correctPosition.value = 
-  selectedPieceRef.current.userData.isPlaced ? 1.0 : 0.0;
-    
-    // Sync position with Firebase
-    const pieceIndex = puzzlePiecesRef.current.indexOf(selectedPieceRef.current);
-    updatePiecePosition(selectedPieceRef.current, pieceIndex);
-    
-    if (selectedPieceRef.current.userData.isPlaced) {
-      // Update completed pieces count in Firebase
-      update(ref(database, `games/${gameId}/puzzle`), {
-        completedPieces: completedPieces + 1
-      });
-    }
-  };
-
-  // Modified createPuzzlePieces to sync with Firebase
-  const createPuzzlePieces = async (imageUrl) => {
-    // Previous piece creation logic...
-    if (!sceneRef.current) return;
-
-puzzlePiecesRef.current.forEach(piece => {
-  sceneRef.current.remove(piece);
-});
-puzzlePiecesRef.current = [];
-
-const texture = await new THREE.TextureLoader().loadAsync(imageUrl);
-const aspectRatio = texture.image.width / texture.image.height;
-
-const gridSize = { x: 4, y: 3 };
-const pieceSize = {
-  x: 1 * aspectRatio / gridSize.x,
-  y: 1 / gridSize.y
-};
-
-setTotalPieces(gridSize.x * gridSize.y);
-createPlacementGuides(gridSize, pieceSize);
-
-for (let y = 0; y < gridSize.y; y++) {
-  for (let x = 0; x < gridSize.x; x++) {
-    const geometry = new THREE.PlaneGeometry(
-      pieceSize.x * 0.95,
-      pieceSize.y * 0.95,
-      32,
-      32
-    );
-
-    const material = new THREE.ShaderMaterial({
-      uniforms: {
-        map: { value: texture },
-        heightMap: { value: texture },
-        uvOffset: { value: new THREE.Vector2(x / gridSize.x, y / gridSize.y) },
-        uvScale: { value: new THREE.Vector2(1 / gridSize.x, 1 / gridSize.y) },
-        extrusionScale: { value: 0.15 },
-        selected: { value: 0.0 },
-        correctPosition: { value: 0.0 },
-        time: { value: 0.0 }
-      },
-      vertexShader: puzzlePieceShader.vertexShader,
-      fragmentShader: puzzlePieceShader.fragmentShader,
-      side: THREE.DoubleSide
-    });
-
-    const piece = new THREE.Mesh(geometry, material);
-    
-    piece.position.x = (x - gridSize.x / 2 + 0.5) * pieceSize.x;
-    piece.position.y = (y - gridSize.y / 2 + 0.5) * pieceSize.y;
-    piece.position.z = 0;
-
-    piece.userData.originalPosition = piece.position.clone();
-    piece.userData.gridPosition = { x, y };
-    piece.userData.isPlaced = false;
-
-    sceneRef.current.add(piece);
-    puzzlePiecesRef.current.push(piece);
-  }
-}
-
-// Scramble pieces
-puzzlePiecesRef.current.forEach(piece => {
-  piece.position.x += (Math.random() - 0.5) * 2;
-  piece.position.y += (Math.random() - 0.5) * 2;
-  piece.position.z += Math.random() * 0.5;
-  piece.rotation.z = (Math.random() - 0.5) * 0.5;
-});
-    
-    if (gameId) {
-      // Save initial piece states to Firebase
-      const pieceStates = puzzlePiecesRef.current.map(piece => ({
-        position: {
-          x: piece.position.x,
-          y: piece.position.y,
-          z: piece.position.z
-        },
-        rotation: piece.rotation.z,
-        isPlaced: piece.userData.isPlaced
-      }));
-      
-      await update(ref(database, `games/${gameId}/puzzle`), {
-        pieces: pieceStates,
-        totalPieces: gridSize.x * gridSize.y,
-        completedPieces: 0
-      });
-    }
-  };
-
-// Image Upload Handler
-const handleImageUpload = async (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  setLoading(true);
-  const reader = new FileReader();
-  
-  reader.onload = async (e) => {
-    setImage(e.target.result);
-    await createPuzzlePieces(e.target.result);
-    setLoading(false);
-    setGameState('initial');
-    setIsTimerRunning(false);
-    setCompletedPieces(0);
-    setProgress(0);
-    setTimeElapsed(0);
-    
-    if (gameId) {
-      await update(ref(database, `games/${gameId}`), {
-        imageData: e.target.result,
-        state: 'initial',
-        puzzle: {
-          pieces: [],
-          completedPieces: 0,
-          totalPieces: 0
-        }
-      });
-    }
-  };
-
-  reader.onerror = () => {
-    setLoading(false);
-    console.error('Error reading file');
-  };
-
-  reader.readAsDataURL(file);
-};
-
-// Time Formatting
-const formatTime = (seconds) => {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-};
-
-// Game State Handlers
-const startGame = () => {
-  setGameState('playing');
-  setIsTimerRunning(true);
-  
-  if (gameId) {
-    update(ref(database, `games/${gameId}`), {
-      state: 'playing',
-      startTime: Date.now()
-    });
-  }
-};
-
-const togglePause = () => {
-  const newState = gameState === 'playing' ? 'paused' : 'playing';
-  setGameState(newState);
-  setIsTimerRunning(newState === 'playing');
-  
-  if (gameId) {
-    update(ref(database, `games/${gameId}`), {
-      state: newState,
-      lastUpdated: Date.now()
-    });
-  }
-};
-// Camera Control Handlers
-const handleZoomIn = (cameraRef) => {
-  if (cameraRef.current) {
-    const newZ = Math.max(cameraRef.current.position.z - 1, 2);
-    cameraRef.current.position.setZ(newZ);
-  }
-};
-
-const handleZoomOut = (cameraRef) => {
-  if (cameraRef.current) {
-    const newZ = Math.min(cameraRef.current.position.z + 1, 10);
-    cameraRef.current.position.setZ(newZ);
-  }
-};
-
-const handleResetView = ({
-  cameraRef,
-  controlsRef,
-  defaultCameraPosition,
-  defaultControlsTarget
-}) => {
-  if (cameraRef.current && controlsRef.current) {
-    cameraRef.current.position.set(
-      defaultCameraPosition.x,
-      defaultCameraPosition.y,
-      defaultCameraPosition.z
-    );
-    controlsRef.current.target.copy(defaultControlsTarget);
-    controlsRef.current.update();
-  }
-};
-
-// Game Reset Handler
-const handleResetGame = ({
-  sceneRef,
-  image,
-  setTimeElapsed,
-  setCompletedPieces,
-  setProgress,
-  setGameState,
-  setIsTimerRunning,
-  puzzlePiecesRef,
-  totalPieces,
-  handleResetView,
-  gameId,
-  database
-}) => {
-  if (!sceneRef.current || !image) return;
-  
-  setTimeElapsed(0);
-  setCompletedPieces(0);
-  setProgress(0);
-  setGameState('initial');
-  setIsTimerRunning(false);
-  
-  // Reset all puzzle pieces
-  puzzlePiecesRef.current.forEach(piece => {
-    piece.position.x = piece.userData.originalPosition.x + (Math.random() - 0.5) * 2;
-    piece.position.y = piece.userData.originalPosition.y + (Math.random() - 0.5) * 2;
-    piece.position.z = Math.random() * 0.5;
-    piece.rotation.z = (Math.random() - 0.5) * 0.5;
-    piece.userData.isPlaced = false;
-    if (piece.material.uniforms) {
-      piece.material.uniforms.correctPosition.value = 0;
-    }
-  });
-
-  handleResetView();
-  
-  // Sync with multiplayer if active
-  if (gameId) {
-    const pieceStates = puzzlePiecesRef.current.map(piece => ({
-      position: {
-        x: piece.position.x,
-        y: piece.position.y,
-        z: piece.position.z
-      },
-      rotation: piece.rotation.z,
-      isPlaced: false
-    }));
-    
-    update(ref(database, `games/${gameId}`), {
-      state: 'initial',
-      puzzle: {
-        pieces: pieceStates,
-        completedPieces: 0,
-        totalPieces: totalPieces
-      }
-    });
-  }
-};
-
-// Window Resize Handler
-const handleWindowResize = ({
-  containerRef,
-  cameraRef,
-  rendererRef,
-  composerRef
-}) => {
-  if (!containerRef.current || !cameraRef.current || !rendererRef.current) return;
-  
-  const width = containerRef.current.clientWidth;
-  const height = containerRef.current.clientHeight;
-  
-  cameraRef.current.aspect = width / height;
-  cameraRef.current.updateProjectionMatrix();
-  
-  rendererRef.current.setSize(width, height);
-  if (composerRef.current) {
-    composerRef.current.setSize(width, height);
-  }
-};
-
-// React Effects
-const useWindowResizeEffect = (handleWindowResize) => {
-  useEffect(() => {
-    window.addEventListener('resize', handleWindowResize);
-    return () => window.removeEventListener('resize', handleWindowResize);
-  }, [handleWindowResize]);
-};
-
-const useGameCompletionEffect = ({
-  progress,
-  setIsTimerRunning,
-  gameId,
-  timeElapsed,
-  database
-}) => {
-  useEffect(() => {
-    if (progress === 100) {
-      setIsTimerRunning(false);
-      if (gameId) {
-        update(ref(database, `games/${gameId}`), {
-          state: 'completed',
-          completionTime: timeElapsed
-        });
-      }
-    }
-  }, [progress, gameId, timeElapsed, setIsTimerRunning, database]);
-};
-
-// Usage example in component:
-/*
-const PuzzleGame = () => {
-  // ... state and ref declarations ...
-
-  useWindowResizeEffect(() => 
-    handleWindowResize({ 
-      containerRef, 
-      cameraRef, 
-      rendererRef, 
-      composerRef 
-    })
-  );
-
-  useGameCompletionEffect({
-    progress,
-    setIsTimerRunning,
-    gameId,
-    timeElapsed,
-    database
-  });
-
-  return (
-    // ... JSX ...
-  );
-};
-*/
-
-  return (
-    <div className="w-full h-screen flex flex-col bg-gray-900">
-      {/* Header with controls */}
-      <div className="p-4 bg-gray-800 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          {/* Previous controls... */}
-            <label className="relative cursor-pointer">
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
-              className="hidden"
-            />
-            <div className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 
-                          rounded-lg text-white transition-colors">
-              <Camera className="w-5 h-5" />
-              <span>Upload Photo</span>
-            </div>
-          </label>
-
-          {/* Play/Pause controls */}
-          <div className="flex items-center gap-2">
-            {gameState !== 'initial' && (
-              <button
-                onClick={togglePause}
-                className="p-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
-              >
-                {gameState === 'playing' ? (
-                  <Pause className="w-5 h-5" />
-                ) : (
-                  <Play className="w-5 h-5" />
-                )}
-              </button>
-            )}
-            
-            {gameState === 'initial' && (
-              <button
-                onClick={startGame}
-                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-              >
-                <Play className="w-5 h-5" />
-              </button>
-            )}
-          </div>
-
-          {/* Timer display */}
-          <div className="flex items-center gap-2 text-white bg-gray-700 px-3 py-1 rounded-lg">
-            <Clock className="w-4 h-4" />
-            <span>{formatTime(timeElapsed)}</span>
-          </div>
-
-          <button className="p-2 text-gray-300 hover:text-white">
-            <Info className="w-5 h-5" />
-          </button>
+      // For each piece position
+      for (let row = 0; row < difficulty; row++) {
+        for (let col = 0; col < difficulty; col++) {
+          // Set canvas size to piece size
+          canvas.width = pieceWidth;
+          canvas.height = pieceHeight;
           
-          {/* Multiplayer controls */}
-          {!gameId ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={createMultiplayerGame}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 
-                          hover:bg-green-700 rounded-lg text-white transition-colors"
-              >
-                <Users className="w-5 h-5" />
-                <span>Create Game</span>
-              </button>
+          // Clear canvas
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          
+          // Draw the specific portion of the image
+          ctx.drawImage(
+            img,
+            col * pieceWidth,     // sx
+            row * pieceHeight,    // sy
+            pieceWidth,          // sWidth
+            pieceHeight,         // sHeight
+            0,                   // dx
+            0,                   // dy
+            pieceWidth,          // dWidth
+            pieceHeight          // dHeight
+          );
+          
+          // Convert to data URL
+          const pieceDataUrl = canvas.toDataURL('image/png');
+          
+          pieces.push({
+            id: `piece-${row}-${col}`,
+            imageUrl: pieceDataUrl,
+            correct: { x: row, y: col },
+            initialAngle: Math.random() * Math.PI * 2,
+            initialPos: {
+              x: Math.cos(Math.random() * Math.PI * 2) * (Math.random() * 2),
+              y: Math.sin(Math.random() * Math.PI * 2) * (Math.random() * 2)
+            },
+            width: pieceWidth,
+            height: pieceHeight
+          });
+        }
+      }
+      resolve(pieces);
+    };
+    
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = imageUrl;
+  });
+};
+
+const textureLoader = new THREE.TextureLoader();
+// Memoize texture loading
+// const useTexture = (imageUrl) => {
+//   const texture = useMemo(() => {
+//     if (!imageUrl) return null;
+//     return textureLoader.load(imageUrl);
+//   }, [imageUrl]); // Only reload if imageUrl changes
+  
+//   return texture;
+// };
+
+const useTexture = (imageUrl) => {
+  return useMemo(() => imageUrl ? textureLoader.load(imageUrl) : null, [imageUrl]);
+};
+
+
+// Update PuzzlePiece component to use individual piece texture
+const PuzzlePiece = React.memo(({ piece, gridSize, onSelect, isSelected, isPlaced }) => {
+  const meshRef = useRef();
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragPos, setDragPos] = useState([0, 0, 0]);
+  const texture = useTexture(piece.imageUrl);
+  const pieceSize = 1 / gridSize;
+  // const textureLoader = new THREE.TextureLoader();
+  // const texture = textureLoader.load(piece.imageUrl);
+  
+  // Memoize texture loading
+  // const texture = useTexture(piece.imageUrl);
+  
+  // const pieceSize = 1 / gridSize;
+
+  // Calculate initial scattered position
+  // const scatterRadius = 2; // Adjust this value to control how far pieces scatter
+  // const randomAngle = piece.initialAngle || Math.random() * Math.PI * 2;
+  // const randomRadius = Math.random() * scatterRadius;
+  // const initialX = piece.initialPos ? piece.initialPos.x : Math.cos(randomAngle) * randomRadius;
+  // const initialY = piece.initialPos ? piece.initialPos.y : Math.sin(randomAngle) * randomRadius;
+
+  // useEffect(() => {
+  //   if (!piece.isPlaced) {
+  //     meshRef.current.position.x = initialX;
+  //     meshRef.current.position.y = initialY;
+  //   }
+  // }, []);
+
+  const { camera, viewport, size } = useThree();
+  const raycaster = useMemo(() => new THREE.Raycaster(), []);
+  const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), []);
+  const intersection = useMemo(() => new THREE.Vector3(), []);
+
+
+  // Memoize initial position calculations
+  const initialPosition = useMemo(() => {
+    const scatterRadius = 2;
+    const randomAngle = piece.initialAngle || Math.random() * Math.PI * 2;
+    const randomRadius = Math.random() * scatterRadius;
+    return {
+      x: piece.initialPos ? piece.initialPos.x : Math.cos(randomAngle) * randomRadius,
+      y: piece.initialPos ? piece.initialPos.y : Math.sin(randomAngle) * randomRadius
+    };
+  }, []);
+
+  // Set initial position only once
+  useEffect(() => {
+    if (!piece.isPlaced && meshRef.current) {
+      meshRef.current.position.x = initialPosition.x;
+      meshRef.current.position.y = initialPosition.y;
+    }
+  }, []);
+  const getMousePosition = (event) => {
+    const mouse = new THREE.Vector2(
+      (event.clientX / size.width) * 2 - 1,
+      -(event.clientY / size.height) * 2 + 1
+    );
+    raycaster.setFromCamera(mouse, camera);
+    raycaster.ray.intersectPlane(plane, intersection);
+    return intersection;
+  };
+
+  // Memoize current position calculation
+  // const currentPosition = useMemo(() => {
+  //   if (isDragging) {
+  //     return dragPos;
+  //   }
+  //   if (piece.isPlaced) {
+  //     return [
+  //       (piece.current.y - gridSize/2) * pieceSize,
+  //       (gridSize/2 - piece.current.x) * pieceSize,
+  //       0
+  //     ];
+  //   }
+  //   return [initialPosition.x, initialPosition.y, 0];
+  // }, [isDragging, dragPos, piece.isPlaced, piece.current, gridSize, pieceSize]);
+
+
+  const onPointerDown = (e) => {
+    e.stopPropagation();
+    if (piece.isPlaced) return;
+    
+    setIsDragging(true);
+    
+    // Store initial mouse position for offset calculation
+    const pos = getMousePosition(e);
+    const offset = {
+      x: meshRef.current.position.x - pos.x,
+      y: meshRef.current.position.y - pos.y
+    };
+    meshRef.current.userData.offset = offset;
+
+    // Capture pointer events on the window
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  };
+
+  const onPointerMove = (e) => {
+    if (isDragging) {
+      const pos = getMousePosition(e);
+      const offset = meshRef.current.userData.offset;
+      
+      setDragPos([
+        pos.x + offset.x,
+        pos.y + offset.y,
+        0
+      ]);
+    }
+  };
+
+  const onPointerUp = (e) => {
+    if (isDragging) {
+      setIsDragging(false);
+
+      // Remove window event listeners
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+
+      // Convert world position to grid position
+      const gridX = Math.round(dragPos[0] / pieceSize);
+      const gridY = Math.round(dragPos[1] / pieceSize);
+
+      onSelect({
+        ...piece,
+        dropPosition: {
+          x: gridX + Math.floor(gridSize/2),
+          y: gridY + Math.floor(gridSize/2)
+        }
+      });
+    }
+  };
+
+  const currentPosition = useMemo(() => {
+    if (isDragging) {
+      return dragPos;
+    }
+    if (piece.isPlaced) {
+      return [
+        (piece.current.y - gridSize/2) * pieceSize,
+        (gridSize/2 - piece.current.x) * pieceSize,
+        0
+      ];
+    }
+    return [initialPosition.x, initialPosition.y, 0];
+  }, [isDragging, dragPos, piece.isPlaced, piece.current, gridSize, pieceSize]);
+
+  if (!texture) return null;
+
+  return (
+    <mesh
+      ref={meshRef}
+      position={currentPosition}
+      rotation={[0, 0, (piece.rotation * Math.PI) / 180]}
+      onClick={(e) => !isDragging && onSelect(piece)}
+      onPointerDown={onPointerDown}
+    >
+      <planeGeometry args={[pieceSize, pieceSize]} />
+      <meshStandardMaterial 
+        map={texture}
+        transparent={true}
+        opacity={isDragging ? 0.7 : 1}
+      />
+      {(isSelected || isDragging) && (
+        <lineSegments>
+          <edgesGeometry args={[new THREE.PlaneGeometry(pieceSize, pieceSize)]} />
+          <lineBasicMaterial color="blue" />
+        </lineSegments>
+      )}
+      {isPlaced && (
+        <lineSegments>
+          <edgesGeometry args={[new THREE.PlaneGeometry(pieceSize, pieceSize)]} />
+          <lineBasicMaterial color="green" />
+        </lineSegments>
+      )}
+    </mesh>
+  );
+});
+
+PuzzlePiece.displayName = 'PuzzlePiece';
+
+const PuzzleBoard = ({ difficulty, onDrop }) => {
+  const gridRef = useRef();
+  const pieceSize = 1 / difficulty;
+
+  return (
+    <group ref={gridRef}>
+      {Array.from({ length: difficulty * difficulty }).map((_, index) => {
+        const x = Math.floor(index / difficulty);
+        const y = index % difficulty;
+        
+        return (
+          <mesh
+            key={`cell-${x}-${y}`}
+            position={[
+              (y - difficulty/2) * pieceSize,
+              (difficulty/2 - x) * pieceSize,
+              -0.01
+            ]}
+            onPointerUp={() => onDrop(x, y)}
+          >
+            <planeGeometry args={[pieceSize, pieceSize]} />
+            <meshStandardMaterial color="#f0f0f0" transparent opacity={0.2} />
+            {/* Add blue border */}
+            <lineSegments>
+              <edgesGeometry args={[new THREE.PlaneGeometry(pieceSize, pieceSize)]} />
+              <lineBasicMaterial color="#2196f3" />
+            </lineSegments>
+          </mesh>
+        );
+      })}
+    </group>
+  );
+};
+
+// Add new progress component
+const PuzzleProgress = ({ pieces }) => {
+  const totalPieces = pieces.length;
+  const completedPieces = pieces.filter(p => p.isPlaced).length;
+  const remainingPieces = totalPieces - completedPieces;
+  const progressPercentage = totalPieces > 0 ? (completedPieces / totalPieces) * 100 : 0;
+
+  return (
+    <div className="bg-white p-4 rounded-lg shadow mb-4">
+      <div className="flex justify-between mb-2">
+        <span>Progress: {progressPercentage.toFixed(1)}%</span>
+        <span className="text-gray-600">
+          {completedPieces}/{totalPieces}
+        </span>
+      </div>
+      <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div 
+          className="h-full bg-blue-500 transition-all duration-300"
+          style={{ width: `${progressPercentage}%` }}
+        />
+      </div>
+      <div className="grid grid-cols-3 gap-4 mt-4 text-sm">
+        <div className="text-center">
+          <div className="font-bold text-blue-500">{totalPieces}</div>
+          <div className="text-gray-600">Total Pieces</div>
+        </div>
+        <div className="text-center">
+          <div className="font-bold text-green-500">{completedPieces}</div>
+          <div className="text-gray-600">Completed</div>
+        </div>
+        <div className="text-center">
+          <div className="font-bold text-orange-500">{remainingPieces}</div>
+          <div className="text-gray-600">Remaining</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const MultiplayerPuzzle = ({ puzzleId, gameId, isHost}) => {
+  const userData = JSON.parse(localStorage.getItem('authUser'));
+  const userId = userData.uid;
+  const userName = userData.displayName || userData.email;
+
+  const [gameState, setGameState] = useState({
+    gameId: gameId || window.location.pathname.split('/').pop() || `game-${Date.now()}`,
+    // gameId: window.location.pathname.split('/').pop() || `game-${userId}-${Date.now()}`,
+    imageUrl: '',
+    isHost: isHost || false,
+    difficulty: 3, 
+    timer: 0,
+    imageSize: { width: 0, height: 0 }, 
+    startTime: null, 
+    lastUpdateTime: null
+  });
+
+  const isTimerRunning = useRef(false);
+  const [winner, setWinner] = useState(null);
+
+  // Function to get player with highest score
+  const getHighestScoringPlayer = () => {
+    return Object.values(players).reduce((highest, current) => {
+      return (!highest || current.score > highest.score) ? current : highest;
+    }, null);
+  };
+
+  const WinnerNotification = ({ winner }) => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+        <h3 className="text-xl font-bold mb-4">🎉 Puzzle Completed!</h3>
+        <p className="text-lg mb-4">
+          Winner: <span className="font-bold">{winner.name}</span>
+        </p>
+        <p className="mb-4">Score: {winner.score}</p>
+        <p className="mb-4">Time: {Math.floor(gameState.timer / 60)}:{String(gameState.timer % 60).padStart(2, '0')}</p>
+        <button
+          onClick={() => setWinner(null)}
+          className="w-full p-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+
+  const [showShareModal, setShowShareModal] = useState(false);
+  const puzzleContainerRef = useRef(null);
+
+  const capturePuzzleImage = async () => {
+    if (!puzzleContainerRef.current) return null;
+    try {
+      const canvas = await html2canvas(puzzleContainerRef.current);
+      return canvas.toDataURL('image/png');
+    } catch (err) {
+      console.error('Failed to capture puzzle image:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to capture puzzle image' }
+      }));
+      return null;
+    }
+  };
+
+  const downloadPuzzleImage = async () => {
+    const imageData = await capturePuzzleImage();
+    if (!imageData) return;
+
+    const link = document.createElement('a');
+    link.href = imageData;
+    link.download = `puzzle-${gameState.gameId}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+
+  const shareToFacebook = () => {
+    const url = encodeURIComponent(`${window.location.origin}/#/puzzle/multiplayer/${gameState.gameId}`);
+    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself!`);
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, '_blank');
+  };
+
+  const shareToTwitter = () => {
+    const url = encodeURIComponent(`${window.location.origin}/#/puzzle/multiplayer/${gameState.gameId}`);
+    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself! #PuzzleGame`);
+    window.open(`https://twitter.com/intent/tweet?url=${url}&text=${text}`, '_blank');
+  };
+
+  const shareToWhatsApp = () => {
+    const url = encodeURIComponent(`${window.location.origin}/#/puzzle/multiplayer/${gameState.gameId}`);
+    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself!`);
+    window.open(`https://wa.me/?text=${text}%20${url}`, '_blank');
+  };
+
+
+  const ShareModal = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+        <h3 className="text-xl font-bold mb-4">Share Your Achievement</h3>
+        <div className="space-y-4">
+          <button
+            onClick={shareToFacebook}
+            className="w-full p-3 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Share on Facebook
+          </button>
+          <button
+            onClick={shareToTwitter}
+            className="w-full p-3 bg-sky-400 text-white rounded hover:bg-sky-500"
+          >
+            Share on Twitter
+          </button>
+          <button
+            onClick={shareToWhatsApp}
+            className="w-full p-3 bg-green-500 text-white rounded hover:bg-green-600"
+          >
+            Share on WhatsApp
+          </button>
+          <button
+            onClick={downloadPuzzleImage}
+            className="w-full p-3 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 flex items-center justify-center gap-2"
+          >
+            <Download className="h-4 w-4" /> Download Image
+          </button>
+        </div>
+        <button
+          onClick={() => setShowShareModal(false)}
+          className="mt-4 w-full p-2 border border-gray-300 rounded hover:bg-gray-50"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+
+  const [pieces, setPieces] = useState([]);
+  const [players, setPlayers] = useState({});
+  const [isGameStarted, setIsGameStarted] = useState(false);
+  const [ui, setUi] = useState({
+    zoom: 1,
+    selectedPiece: null,
+    draggedPiece: null,
+    error: null,
+    showPlayers: true,
+    loading: true,
+    gridDimensions: { width: 0, height: 0 },
+    cellDimensions: { width: 0, height: 0 }
+  });
+
+  const storage = getStorage();
+  const database = getDatabase();
+
+  
+
+  const user = { 
+    id: userId || `user-${Date.now()}`, 
+    name: userName || `Player ${Math.floor(Math.random() * 1000)}` 
+  };
+
+  const navigate = useNavigate();
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    let timerInterval;
+
+    const updateTimer = async () => {
+      if (!gameState.startTime || !isGameStarted || gameState.isCompleted) return;
+
+      const newTimer = Math.floor((Date.now() - gameState.startTime) / 1000);
+
+      try {
+        await update(dbRef(database, `games/${gameState.gameId}`), { timer: newTimer });
+        setGameState(prev => ({ ...prev, timer: newTimer }));
+      } catch (err) {
+        console.error('Failed to update timer:', err);
+      }
+    };
+
+    if (isGameStarted && gameState.startTime && !gameState.isCompleted) {
+      timerInterval = setInterval(updateTimer, 1000);
+    }
+
+    return () => {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+      }
+    };
+  }, [isGameStarted, gameState.startTime, gameState.isCompleted]);
+
+
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem('userId')) {
+        localStorage.setItem('userId', user.id);
+        localStorage.setItem('userName', user.name);
+      }
+    } catch (err) {
+      console.error('Failed to save user info to localStorage:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to save user information' }
+      }));
+    }
+  }, [user.id, user.name]);
+
+  useEffect(() => {
+    let unsubscribe;
+    const gameRef = dbRef(database, `games/${gameState.gameId}`);
+    
+    const initializeGame = async () => {
+      try {
+        const snapshot = await get(gameRef);
+        const data = snapshot.val();
+        
+        if (!data) {
+          // New game - set up initial state with current difficulty
+          await set(gameRef, {
+            players: {
+              [userId]: {
+                id: userId,
+                name: userName,
+                score: 0,
+                color: `#${Math.floor(Math.random()*16777215).toString(16)}`,
+                isHost: true
+              }
+            },
+            imageUrl: '',
+            isGameStarted: false,
+            timer: 0,
+            difficulty: gameState.difficulty, // Ensure difficulty is set in Firebase
+            startTime: null, // Ensure startTime is set to null in Firebase
+            imageSize: gameState.imageSize // Ensure imageSize is set in Firebase
+          });
+          setGameState(prev => ({ ...prev, isHost: true }));
+        } else {
+          // Join existing game - get difficulty from Firebase
+          setGameState(prev => ({
+            ...prev,
+            difficulty: data.difficulty || 3,
+            isHost: data.players?.[userId]?.isHost || false,
+            startTime: data.startTime || null, // Get startTime from Firebase
+            imageSize: data.imageSize || { width: 0, height: 0 } // Get imageSize from Firebase
+          }));
+          
+          if (!data.players?.[userId]) {
+            const playerUpdate = {
+              [`players/${userId}`]: {
+                id: userId,
+                name: userName,
+                score: 0,
+                color: `#${Math.floor(Math.random()*16777215).toString(16)}`,
+                isHost: false
+              }
+            };
+            await update(gameRef, playerUpdate);
+          }
+        }
+        setUi(prev => ({ ...prev, loading: false }));
+      } catch (err) {
+        console.error('Failed to initialize game:', err);
+        setUi(prev => ({
+          ...prev,
+          loading: false,
+          error: { type: 'error', message: 'Failed to initialize game' }
+        }));
+      }
+    };
+
+    const setupListeners = () => {
+      unsubscribe = onValue(gameRef, (snapshot) => {
+        try {
+          const data = snapshot.val();
+          if (data) {
+            setGameState(prev => ({
+              ...prev,
+              imageUrl: data.imageUrl || '',
+              difficulty: data.difficulty || 3,
+              timer: data.timer || 0
+            }));
+            setPlayers(data.players || {});
+            setPieces(data.pieces || []);
+            setIsGameStarted(data.isGameStarted || false);
+          }
+        } catch (err) {
+          console.error('Error processing game update:', err);
+          setUi(prev => ({
+            ...prev,
+            error: { type: 'error', message: 'Failed to process game update' }
+          }));
+        }
+      }, (error) => {
+        console.error('Database listener error:', error);
+        setUi(prev => ({
+          ...prev,
+          error: { type: 'error', message: 'Lost connection to game' }
+        }));
+      });
+    };
+
+    initializeGame();
+    setupListeners();
+
+    // Cleanup
+    return () => {
+      if (unsubscribe) unsubscribe();
+      if (timerRef.current) clearInterval(timerRef.current);
+      try {
+        // Remove player when they leave
+        const updates = {};
+        updates[`games/${gameState.gameId}/players/${userId}`] = null;
+        update(dbRef(database), updates);
+      } catch (err) {
+        console.error('Error during cleanup:', err);
+      }
+    };
+  }, [gameState.gameId, userId, database]);
+
+  useEffect(() => {
+    if (isGameStarted) {
+      if (!gameState.startTime) {
+        const startTime = Date.now();
+        setGameState(prev => ({ ...prev, startTime }));
+        timerRef.current = setInterval(() => {
+          const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+          console.log(`Timer updated: ${elapsedSeconds} seconds`); // Log timer updates
+          setGameState(prev => ({ ...prev, timer: elapsedSeconds }));
+        }, 1000);
+      }
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isGameStarted]);
+
+  useEffect(() => {
+  const checkCompletion = async () => {
+    const totalPieces = pieces.length;
+    const correctlyPlaced = pieces.filter(p => p.isPlaced).length;
+
+    if (isGameStarted && totalPieces > 0 && totalPieces === correctlyPlaced) {
+      if (isPuzzleComplete(pieces)) {
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+
+        try {
+          const highestScoringPlayer = getHighestScoringPlayer();
+
+          if (highestScoringPlayer.id === userId) {
+            const completionTime = Date.now() - gameState.startTime;
+
+            // First, handle the puzzle completion record
+            const completionData = {
+              puzzleId: gameState.gameId,
+              userId: userId,
+              playerName: userName,
+              startTime: gameState.startTime,
+              difficulty: gameState.difficulty,
+              imageUrl: gameState.imageUrl,
+              timer: completionTime / 1000
+            };
+
+            console.log('Data sent to handlePuzzleCompletion:', completionData);
+            await handlePuzzleCompletion(completionData);
+
+            const gameRef = dbRef(database, `games/${gameState.gameId}`);
+            const playerSnapshot = await get(dbRef(database, `games/${gameState.gameId}/players/${highestScoringPlayer.id}`));
+            const currentScore = playerSnapshot.val()?.score || 0;
+
+            console.log("current-score", currentScore);
+
+            await update(gameRef, { 
+              isGameStarted: false, 
+              completionTime,
+              winner: {
+                name: highestScoringPlayer.name,
+                score: currentScore + 1, // Use the fetched current score
+                id: highestScoringPlayer.id
+              }
+            });
+
+            await update(dbRef(database, `games/${gameState.gameId}/players/${highestScoringPlayer.id}`), {
+              score: currentScore + 1
+            });
+
+            const playerScoreUpdate = {
+              [`players/${highestScoringPlayer.id}/score`]: currentScore + 1
+            };
+            await update(gameRef, playerScoreUpdate);
+
+            // Show winner notification
+            setWinner(highestScoringPlayer);
+
+            // Show share modal
+            setShowShareModal(true);
+
+            setUi(prev => ({
+              ...prev,
+              error: { 
+                type: 'success', 
+                message: `Puzzle completed by ${highestScoringPlayer.name}! They win with a score of ${highestScoringPlayer.score + 1}!` 
+              }
+            }));
+          } else {
+            // Notify other players they can't complete the puzzle
+            setUi(prev => ({
+              ...prev,
+              error: { 
+                type: 'info', 
+                message: `Only ${highestScoringPlayer.name} (highest score) can complete the puzzle!` 
+              }
+            }));
+          }
+        } catch (err) {
+          console.error('Failed to record completion:', err);
+          setUi(prev => ({
+            ...prev,
+            error: { 
+              type: 'error', 
+              message: 'Failed to record puzzle completion' 
+            }
+          }));
+        }
+      }
+    }
+  };
+
+  checkCompletion();
+}, [pieces, isGameStarted, userId, players]);
+
+  const clearSession = async () => {
+    try {
+      const updates = {};
+      updates[`games/${gameState.gameId}/players/${userId}`] = null;
+      await update(dbRef(database), updates);
+
+      localStorage.removeItem('userId');
+      localStorage.removeItem('userName');
+
+      const gameRef = dbRef(database, `games/${gameState.gameId}`);
+      const snapshot = await get(gameRef);
+      const data = snapshot.val();
+      
+      if (gameState.isHost && (!data?.players || Object.keys(data.players).length === 0)) {
+        await set(gameRef, null);
+      }
+
+      navigate('/');
+    } catch (err) {
+      console.error('Failed to clear session:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to clear session' }
+      }));
+    }
+  };
+
+  const leaveSession = async () => {
+    try {
+      const updates = {};
+      updates[`games/${gameState.gameId}/players/${userId}`] = null;
+      await update(dbRef(database), updates);
+
+      navigate('/');
+    } catch (err) {
+      console.error('Failed to leave session:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to leave session' }
+      }));
+    }
+  };
+  
+  const handleImageUpload = async (event) => {
+    if (!gameState.isHost) return;
+    
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUi(prev => ({ ...prev, loading: true, error: null }));
+      const imageRef = storageRef(storage, `puzzle-images/${gameState.gameId}/${file.name}`);
+      const snapshot = await uploadBytes(imageRef, file);
+      const url = await getDownloadURL(snapshot.ref);
+      
+      // Split image into pieces
+      const piecesData = await splitImage(url, gameState.difficulty);
+      
+      // Create initial game pieces with randomized positions
+      const availablePositions = [];
+      for (let i = 0; i < gameState.difficulty; i++) {
+        for (let j = 0; j < gameState.difficulty; j++) {
+          availablePositions.push({ x: i, y: j });
+        }
+      }
+      
+      const initialPieces = piecesData.map(pieceData => {
+        const randomIndex = Math.floor(Math.random() * availablePositions.length);
+        const position = availablePositions.splice(randomIndex, 1)[0];
+        
+        return {
+          ...pieceData,
+          current: position,
+          rotation: Math.floor(Math.random() * 4) * 90,
+          isPlaced: false
+        };
+      });
+
+      const updates = {
+        [`games/${gameState.gameId}/imageUrl`]: url,
+        [`games/${gameState.gameId}/pieces`]: initialPieces,
+        [`games/${gameState.gameId}/imageSize`]: {
+          width: piecesData[0].width * gameState.difficulty,
+          height: piecesData[0].height * gameState.difficulty
+        },
+        [`games/${gameState.gameId}/isGameStarted`]: true, // Automatically start the game
+        [`games/${gameState.gameId}/startTime`]: Date.now() // Set start time
+      };
+      
+      await update(dbRef(database), updates);
+      setUi(prev => ({ ...prev, loading: false }));
+    } catch (err) {
+      console.error('Image upload error:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: err.message || 'Failed to upload image' },
+        loading: false
+      }));
+    }
+  };
+
+  const initializePuzzle = async () => {
+    if (!gameState.imageUrl || !gameState.isHost) return;
+  
+    try {
+      setUi(prev => ({ ...prev, loading: true, error: null }));
+      const newPieces = [];
+      const availablePositions = [];
+  
+      // Create a list of all possible positions
+      for (let i = 0; i < gameState.difficulty; i++) {
+        for (let j = 0; j < gameState.difficulty; j++) {
+          availablePositions.push({ x: i, y: j });
+        }
+      }
+  
+      for (let i = 0; i < gameState.difficulty; i++) {
+        for (let j = 0; j < gameState.difficulty; j++) {
+          // Randomly select a position from the available positions
+          const randomIndex = Math.floor(Math.random() * availablePositions.length);
+          const position = availablePositions.splice(randomIndex, 1)[0];
+          const isPlaced = position.x === i && position.y === j;
+  
+          newPieces.push({
+            id: `piece-${i}-${j}`,
+            correct: { x: i, y: j },
+            current: { x: position.x, y: position.y },
+            rotation: 0,
+            isPlaced: isPlaced
+          });
+        }
+      }
+  
+      const startTime = Date.now();
+  
+      const updates = {
+        [`games/${gameState.gameId}/pieces`]: newPieces,
+        [`games/${gameState.gameId}/isGameStarted`]: true,
+        [`games/${gameState.gameId}/startTime`]: Date.now(), // Set startTime in Firebase
+        [`games/${gameState.gameId}/timer`]: 0,
+        [`games/${gameState.gameId}/lastUpdateTime`]: startTime
+      };
+      
+      await update(dbRef(database), updates);
+      setUi(prev => ({ ...prev, loading: false }));
+    } catch (err) {
+      console.error('Failed to initialize puzzle:', err);
+      setUi(prev => ({
+        ...prev,
+        loading: false,
+        error: { type: 'error', message: 'Failed to start game' }
+      }));
+    }
+  };
+  
+
+  const handleDrop = async (piece) => {
+    if (!piece.dropPosition) return;
+
+    try {
+      const { x, y } = piece.dropPosition;
+      const updatedPieces = pieces.map(p => {
+        if (p.id === piece.id) {
+          const isCorrect = x === p.correct.x && 
+                           y === p.correct.y && 
+                           p.rotation % 360 === 0;
+          
+          return { ...p, current: { x, y }, isPlaced: isCorrect };
+        }
+        return p;
+      });
+
+      const updates = {};
+      updates[`games/${gameState.gameId}/pieces`] = updatedPieces;
+      
+      if (updatedPieces.find(p => p.id === piece.id)?.isPlaced) {
+        updates[`games/${gameState.gameId}/players/${userId}/score`] = 
+          ((players[userId]?.score || 0) + 1);
+      }
+
+      await update(dbRef(database), updates);
+    } catch (err) {
+      console.error('Failed to update piece position:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to move piece' }
+      }));
+    }
+  };
+
+  const handleRotate = async (direction) => {
+    if (!ui.selectedPiece) return;
+
+    try {
+      const updatedPieces = pieces.map(p => {
+        if (p.id === ui.selectedPiece.id) {
+          const newRotation = p.rotation + (direction === 'left' ? -90 : 90);
+          const isCorrect = p.correct.x === p.current.x && 
+                           p.correct.y === p.current.y && 
+                           newRotation % 360 === 0;
+          
+          return { ...p, rotation: newRotation, isPlaced: isCorrect };
+        }
+        return p;
+      });
+
+      const updates = {};
+      updates[`games/${gameState.gameId}/pieces`] = updatedPieces;
+      
+      if (updatedPieces.find(p => p.id === ui.selectedPiece.id)?.isPlaced) {
+        updates[`games/${gameState.gameId}/players/${userId}/score`] = 
+          ((players[userId]?.score || 0) + 1);
+      }
+
+      await update(dbRef(database), updates);
+    } catch (err) {
+      console.error('Failed to rotate piece:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to rotate piece' }
+      }));
+    }
+  };
+
+  const copyGameLink = async () => {
+    const link = `${window.location.origin}/#/puzzle/multiplayer/${gameState.gameId}`;
+    console.log('Copying game link:', link);
+    console.log('game_id:', gameState.gameId);
+    try {
+      await navigator.clipboard.writeText(link);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'success', message: 'Game link copied! Share with friends to play.' }
+      }));
+    } catch (err) {
+      console.error('Failed to copy game link:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to copy game link' }
+      }));
+    }
+  };
+
+  const handleDifficultyChange = async (event) => {
+    if (!gameState.isHost) return;
+    
+    const newDifficulty = parseInt(event.target.value, 10);
+    try {
+      // Update difficulty in Firebase
+      const updates = {
+        [`games/${gameState.gameId}/difficulty`]: newDifficulty
+      };
+      await update(dbRef(database), updates);
+      
+      // Update local state
+      setGameState(prev => ({ ...prev, difficulty: newDifficulty }));
+      
+      // If game hasn't started, clear any existing pieces
+      if (!isGameStarted) {
+        const clearPieces = {
+          [`games/${gameState.gameId}/pieces`]: []
+        };
+        await update(dbRef(database), clearPieces);
+      }
+    } catch (err) {
+      console.error('Failed to update difficulty:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to update difficulty' }
+      }));
+    }
+  };
+
+  const startNewGame = async () => {
+    try {
+      const newGameId = `game-${Date.now()}`;
+      const newGameRef = dbRef(database, `games/${newGameId}`);
+      
+      await set(newGameRef, {
+        players: {
+          [userId]: {
+            id: userId,
+            name: userName,
+            score: 0,
+            color: `#${Math.floor(Math.random() * 16777215).toString(16)}`,
+            isHost: true
+          }
+        },
+        imageUrl: '',
+        isGameStarted: false,
+        timer: 0,
+        difficulty: gameState.difficulty
+      });
+  
+      navigate(`/puzzle/multiplayer/${newGameId}`);
+    } catch (err) {
+      console.error('Failed to start new game:', err);
+      setUi(prev => ({
+        ...prev,
+        error: { type: 'error', message: 'Failed to start new game' }
+      }));
+    }
+  };
+
+  const calculateCompletionPercentage = () => {
+    const totalPieces = pieces.length;
+    const correctlyPlaced = pieces.filter(p => p.isPlaced).length;
+    return totalPieces > 0 ? (correctlyPlaced / totalPieces) * 100 : 0;
+  };
+
+  const completionPercentage = calculateCompletionPercentage();
+  const data = {
+    labels: ['Completion'],
+    datasets: [
+      {
+        label: 'Completion Percentage',
+        data: [completionPercentage],
+        backgroundColor: ['rgba(75, 192, 192, 0.6)'],
+        borderColor: ['rgba(75, 192, 192, 1)'],
+        borderWidth: 1,
+      },
+    ],
+  };
+
+  if (ui.loading) {
+    return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  }
+
+  return (
+    <div className="flex flex-col gap-4 p-4 bg-white rounded-lg shadow-lg max-w-6xl mx-auto">
+      <div className="flex items-center justify-between border-b pb-4">
+        <h1 className="text-2xl font-bold">Multiplayer Puzzle</h1>
+        <div className="text-lg font-semibold">{`Time: ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}`}</div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => navigate('/')}
+            className="p-2 border rounded hover:bg-gray-100 text-gray-600"
+            title="Return Home"
+          >
+            <Home className="h-4 w-4" />
+          </button>
+          <button
+            onClick={leaveSession}
+            className="p-2 border rounded hover:bg-red-50 text-red-600"
+            title="Leave Session"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
+          {gameState.isHost && (
+            <button
+              onClick={clearSession}
+              className="px-3 py-2 border rounded hover:bg-red-50 text-red-600 text-sm"
+              title="Clear Session"
+            >
+              Clear Session
+            </button>
+          )}
+        </div>
+      </div>
+
+      {gameState.isHost && !isGameStarted && (
+        <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+          <label htmlFor="difficulty" className="font-medium">
+            Puzzle Size: {gameState.difficulty}x{gameState.difficulty}
+          </label>
+          <input
+            type="range"
+            id="difficulty"
+            min="2"
+            max="8"
+            value={gameState.difficulty}
+            onChange={handleDifficultyChange}
+            className="flex-1"
+          />
+          <span className="text-sm text-gray-600">
+            ({gameState.difficulty * gameState.difficulty} pieces)
+          </span>
+        </div>
+      )}
+
+      {isGameStarted && <PuzzleProgress pieces={pieces} />}
+
+      <div className="flex gap-2 mt-4">
+        <button
+          onClick={() => setUi(prev => ({ ...prev, zoom: Math.max(prev.zoom - 0.1, 0.5) }))}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Zoom Out"
+        >
+          <ZoomOut className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => setUi(prev => ({ ...prev, zoom: Math.min(prev.zoom + 0.1, 2) }))}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Zoom In"
+        >
+          <ZoomIn className="h-4 w-4" />
+        </button>
+        {ui.selectedPiece && (
+          <>
+            <button
+              onClick={() => handleRotate('left')}
+              className="p-2 border rounded hover:bg-gray-100"
+              title="Rotate Left"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => handleRotate('right')}
+              className="p-2 border rounded hover:bg-gray-100"
+              title="Rotate Right"
+            >
+              <RotateCw className="h-4 w-4" />
+            </button>
+          </>
+        )}
+        <button
+          onClick={() => setUi(prev => ({ ...prev, showPlayers: !prev.showPlayers }))}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Toggle Players"
+        >
+          <Users className="h-4 w-4" />
+        </button>
+        <button
+          onClick={copyGameLink}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Share Game"
+        >
+          <Share2 className="h-4 w-4" />
+        </button>
+        <button
+          onClick={startNewGame}
+          className="p-2 border rounded hover:bg-gray-100"
+          title="Start New Game"
+        >
+          <Play className="h-4 w-4" />
+        </button>
+
+        {gameState.isCompleted && (
+          <button
+            onClick={() => setShowShareModal(true)}
+            className="p-2 border rounded hover:bg-gray-100"
+            title="Share"
+          >
+            <Share2 className="h-4 w-4" />
+          </button>
+        )}
+
+        {gameState.isHost && !isGameStarted && (
+          <button
+            onClick={initializePuzzle}
+            className="p-2 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!gameState.imageUrl}
+            title="Start Game"
+          >
+            <Play className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {ui.error && (
+        <div 
+          className={`p-3 rounded ${
+            ui.error.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+          }`}
+          role="alert"
+        >
+          {ui.error.message}
+        </div>
+      )}
+
+      <div ref={puzzleContainerRef} className="flex gap-4 h-[600px]">
+        <div className="flex-1 relative">
+          {gameState.isHost && !gameState.imageUrl ? (
+            <div className="w-full p-8 border-2 border-dashed rounded-lg text-center">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="w-full"
+              />
+              <p className="mt-2 text-sm text-gray-500">Upload an image to start the game</p>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowShareModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 
-                          hover:bg-blue-700 rounded-lg text-white transition-colors"
-              >
-                <Share className="w-5 h-5" />
-                <span>Share</span>
-              </button>
-              <button
-                onClick={leaveMultiplayerGame}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 
-                          rounded-lg text-white transition-colors"
-              >
-                Leave Game
-              </button>
-            </div>
+            <>
+              <div className="flex justify-between mb-4">
+                <img
+                  src={gameState.imageUrl}
+                  alt="Expected output"
+                  className="w-1/4 h-1/4 lg:w-1/6 lg:h-1/6 object-contain rounded border"
+                />
+                {isGameStarted && (
+                  <div className="text-lg font-semibold">
+                    Time: {Math.floor(gameState.timer / 60)}:
+                    {String(gameState.timer % 60).padStart(2, '0')}
+                  </div>
+                )}
+              </div>
+              <Canvas>
+                <Suspense fallback={null}>
+                  <PerspectiveCamera makeDefault position={[0, 0, 5]} />
+                  <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} />
+                  <ambientLight intensity={0.5} />
+                  <pointLight position={[10, 10, 10]} />
+                  
+                  <PuzzleBoard
+                    difficulty={gameState.difficulty}
+                    onDrop={handleDrop}
+                  />
+                  
+                  {pieces.map(piece => (
+                    <PuzzlePiece
+                      key={piece.id}
+                      piece={piece}
+                      gridSize={gameState.difficulty}
+                      onSelect={(piece) => setUi(prev => ({
+                        ...prev,
+                        selectedPiece: prev.selectedPiece?.id === piece.id ? null : piece
+                      }))}
+                      isSelected={ui.selectedPiece?.id === piece.id}
+                      isPlaced={piece.isPlaced}
+                    />
+                  ))}
+                </Suspense>
+              </Canvas>
+            </>
           )}
         </div>
 
-        {/* Player list */}
-        {gameId && (
-          <div className="flex items-center gap-4 px-4 py-2 bg-gray-700 rounded-lg">
-            <Users className="w-5 h-5 text-gray-400" />
-            <div className="flex gap-2">
-              {Object.values(players).map((player) => (
-                <div
+        {ui.showPlayers && (
+          <div className="w-64 bg-gray-50 p-4 rounded-lg">
+            <h3 className="font-semibold mb-4">Players</h3>
+            <div className="space-y-2">
+              {Object.values(players).map(player => (
+                <div 
                   key={player.id}
-                  className={`px-2 py-1 rounded ${
-                    player.isHost ? 'bg-blue-600' : 'bg-gray-600'
-                  }`}
+                  className="flex items-center gap-2 p-2 bg-white rounded"
                 >
-                  {player.name}
+                  <div 
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: player.color }}
+                  />
+                  <span>{player.name}</span>
+                  <span className="ml-auto">{player.score || 0}</span>
+                  {player.isHost && (
+                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                      Host
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -790,109 +1339,12 @@ const PuzzleGame = () => {
         )}
       </div>
 
-      {/* Share Modal */}
-      {showShareModal && (
-        <div className="fixed inset-0 flex items-center justify-center 
-                      bg-black bg-opacity-50 z-50">
-          <div className="bg-gray-800 p-6 rounded-lg shadow-xl">
-            <h3 className="text-xl text-white mb-4">Share Game</h3>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={`${window.location.origin}?game=${gameId}`}
-                readOnly
-                className="px-4 py-2 bg-gray-700 text-white rounded-lg w-96"
-              />
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(
-                    `${window.location.origin}?game=${gameId}`
-                  );
-                }}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 
-                          rounded-lg text-white transition-colors"
-              >
-                Copy
-              </button>
-            </div>
-            <button
-              onClick={() => setShowShareModal(false)}
-              className="mt-4 px-4 py-2 bg-gray-700 hover:bg-gray-600 
-                        rounded-lg text-white transition-colors w-full"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Previous puzzle area and overlays... */}
-            {/* Main puzzle area */}
-      <div className="flex-1 relative">
-        <div ref={containerRef} className="w-full h-full" />
-
-        {/* Camera controls overlay */}
-        <div className="absolute right-4 top-4 flex flex-col gap-2">
-          <button
-            onClick={handleZoomIn}
-            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            title="Zoom In"
-          >
-            <ZoomIn className="w-5 h-5" />
-          </button>
-          <button
-            onClick={handleZoomOut}
-            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            title="Zoom Out"
-          >
-            <ZoomOut className="w-5 h-5" />
-          </button>
-          <button
-            onClick={handleResetView}
-            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            title="Reset View"
-          >
-            <Maximize2 className="w-5 h-5" />
-          </button>
-          <button
-            onClick={handleResetGame}
-            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            title="Reset Puzzle"
-          >
-            <RotateCcw className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => setShowThumbnail(!showThumbnail)}
-            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            title="Toggle Reference Image"
-          >
-            <Image className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Loading overlay */}
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center 
-                        bg-gray-900 bg-opacity-75 z-10">
-            <div className="text-xl text-white">Loading puzzle...</div>
-          </div>
-        )}
-
-        {/* Thumbnail overlay */}
-        {showThumbnail && image && (
-          <div className="absolute left-4 top-4 p-2 bg-gray-800 rounded-lg shadow-lg">
-            <div className="relative">
-              <img
-                src={image}
-                alt="Reference"
-                className="w-48 h-auto rounded border border-gray-600"
-              />
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Add winner notification */}
+      {winner && <WinnerNotification winner={winner} />}
+      
+      {showShareModal && <ShareModal />}
     </div>
   );
 };
 
-export default PuzzleGame;
+export default MultiplayerPuzzle;
