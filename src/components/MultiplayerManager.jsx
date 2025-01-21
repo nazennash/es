@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
@@ -7,6 +7,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, Play, Pause } from 'lucide-react';
 import { database, ref, set, onValue, update, remove, onDisconnect, push, auth } from '../firebase';
 import { useParams } from 'react-router-dom';
+import { useMultiplayerGame } from '../hooks/useMultiplayerGame';
 
 // Difficulty presets
 const DIFFICULTY_SETTINGS = {
@@ -168,12 +169,19 @@ const puzzlePieceShader = {
   `
 };
 
-const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost }) => {
+const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
+  const { 
+    players, 
+    gameState: multiplayerGameState, 
+    error, 
+    updatePiecePosition, 
+    updateGameState 
+  } = useMultiplayerGame(propGameId);
+
   // Add currentUser from auth
   const [currentUser, setCurrentUser] = useState(auth.currentUser);
   
   // Update your existing states
-  const [players, setPlayers] = useState({});
   const [isHost, setIsHost] = useState(propIsHost);
   const { gameId } = useParams() || { gameId: propGameId };
 
@@ -220,19 +228,6 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost }) => {
 
   };
 
-  const updateGameState = async (newState) => {
-    if (!gameId) return;
-    
-    try {
-      await update(ref(database, `games/${gameId}`), {
-        ...newState,
-        lastUpdated: Date.now()
-      });
-    } catch (error) {
-      console.error('Error updating game state:', error);
-    }
-  };
-  
   // Then modify the togglePause function to use it
   const togglePause = () => {
     if (gameState === 'playing') {
@@ -369,6 +364,11 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost }) => {
         const material = new THREE.ShaderMaterial({
           uniforms: {
             map: { value: texture },
+            heightMap: { value: texture },
+            uvOffset: { value: new THREE.Vector2(x / gridSize.x, y / gridSize.y) },
+            uvScale: { value: new THREE.Vector2(1 / gridSize.x, 1 / gridSize.y) },
+            extrusionScale: { value: 0.15 },
+            selected: { value: 0.0 },
             heightMap: { value: texture },
             uvOffset: { value: new THREE.Vector2(x / gridSize.x, y / gridSize.y) },
             uvScale: { value: new THREE.Vector2(1 / gridSize.x, 1 / gridSize.y) },
@@ -661,7 +661,7 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost }) => {
         players: {
           [currentUser.uid]: {
             id: currentUser.uid,
-            name: currentUser.displayName || 'Anonymous',
+            name: currentUser.displayName || currentUser.email || 'Anonymous',
             isHost: true,
             lastActive: Date.now()
           }
@@ -737,7 +737,7 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost }) => {
   return (
     <div className="w-full h-screen flex flex-col bg-gray-900">
       {/* Add player list */}
-      <div className="absolute left-4 top-4 bg-gray-800 p-4 rounded-lg z-10">
+      <div className="absolute left-4 top-50 bg-gray-800 p-4 rounded-lg z-10 mt-24">
         <h3 className="text-white mb-2">Players</h3>
         <div className="space-y-2">
           {Object.values(players).map(player => (
@@ -751,7 +751,7 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost }) => {
           ))}
         </div>
         {isHost && (
-          <div className="mt-4">
+          <div className="mt-10">
             <p className="text-sm text-gray-400">Invite Link:</p>
             <div className="flex items-center gap-2 mt-1">
               <input

@@ -11,6 +11,7 @@ import Navbar from './components/Navbar';
 import CustomUserPuzzle from './components/CustomUserPuzzle';
 import CustomCulturalPuzzle from './components/CustomCulturalPuzzle';
 import { useParams } from 'react-router-dom';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Component for multiplayer puzzle view
 const MultiplayerPuzzle = () => {
@@ -19,13 +20,16 @@ const MultiplayerPuzzle = () => {
   const actualGameId = isNewGame ? gameId : gameId.replace('join_', '');
 
   return (
-    <div className="puzzle-container">
-      <MultiplayerManager 
-        gameId={actualGameId}
-        isHost={isNewGame}
-        isMultiPlayer={true}
-      />
-    </div>
+    <ErrorBoundary>
+      <div className="puzzle-container">
+        <MultiplayerManager 
+          gameId={actualGameId}
+          isHost={isNewGame}
+          isMultiPlayer={true}
+          user={auth.currentUser}
+        />
+      </div>
+    </ErrorBoundary>
   );
 };
 
