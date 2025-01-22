@@ -12,6 +12,7 @@ import { getFirestore, collection, addDoc, serverTimestamp } from 'firebase/fire
 import { ref, update, getDatabase } from 'firebase/database';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tooltip } from 'react-tooltip';
+import DifficultyBar, { difficulties } from './DifficultyBar';
 
 // 2. Constants
 const DIFFICULTY_SETTINGS = {
@@ -241,10 +242,12 @@ const PuzzleGame = () => {
   const [gameState, setGameState] = useState('initial'); // 'initial', 'playing', 'paused'
   const [showThumbnail, setShowThumbnail] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showDifficultyModal, setShowDifficultyModal] = useState(false); // Add this
   const [startTime, setStartTime] = useState(null);
-  const [difficulty, setDifficulty] = useState(4); // default difficulty
+  const [difficulty, setDifficulty] = useState('easy');
   const [gameId, setGameId] = useState(null);
   const [completedAchievements, setCompletedAchievements] = useState([]);
+  const [selectedDifficulty, setSelectedDifficulty] = useState(difficulties[0]);
 
   // Refs
   const containerRef = useRef(null);
@@ -379,59 +382,65 @@ const PuzzleGame = () => {
   const createPlacementGuides = (gridSize, pieceSize) => {
     guideOutlinesRef.current.forEach(guide => sceneRef.current.remove(guide));
     guideOutlinesRef.current = [];
-
+  
+    // Increase the size of guides (using 98% of piece size for visual gap)
     for (let y = 0; y < gridSize.y; y++) {
       for (let x = 0; x < gridSize.x; x++) {
         const outlineGeometry = new THREE.EdgesGeometry(
-          new THREE.PlaneGeometry(pieceSize.x * 0.95, pieceSize.y * 0.95)
+          new THREE.PlaneGeometry(pieceSize.x * 0.98, pieceSize.y * 0.98)
         );
         const outlineMaterial = new THREE.LineBasicMaterial({ 
           color: 0x4a90e2,
           transparent: true,
-          opacity: 0.5
+          opacity: 0.5,
+          linewidth: 2 // Note: linewidth may not work in WebGL
         });
         const outline = new THREE.LineSegments(outlineGeometry, outlineMaterial);
-
-        outline.position.x = (x - gridSize.x / 2 + 0.5) * pieceSize.x;
-        outline.position.y = (y - gridSize.y / 2 + 0.5) * pieceSize.y;
+  
+        // Position guides with proper spacing
+        outline.position.x = (x - (gridSize.x - 1) / 2) * pieceSize.x;
+        outline.position.y = (y - (gridSize.y - 1) / 2) * pieceSize.y;
         outline.position.z = -0.01;
-
+  
         sceneRef.current.add(outline);
         guideOutlinesRef.current.push(outline);
       }
     }
   };
-
+  
   // Create puzzle pieces
   const createPuzzlePieces = async (imageUrl) => {
     if (!sceneRef.current) return;
-
+  
     puzzlePiecesRef.current.forEach(piece => {
       sceneRef.current.remove(piece);
     });
     puzzlePiecesRef.current = [];
-
+  
     const texture = await new THREE.TextureLoader().loadAsync(imageUrl);
     const aspectRatio = texture.image.width / texture.image.height;
     
-    const gridSize = { x: 4, y: 3 };
+    // Adjust base size to be larger
+    const baseSize = 2.0; // Increased from default size
+    
+    const gridSize = selectedDifficulty.grid; // Reduced number of pieces for larger size
     const pieceSize = {
-      x: 1 * aspectRatio / gridSize.x,
-      y: 1 / gridSize.y
+      x: (baseSize * aspectRatio) / gridSize.x,
+      y: baseSize / gridSize.y
     };
-
+  
     setTotalPieces(gridSize.x * gridSize.y);
     createPlacementGuides(gridSize, pieceSize);
-
+  
     for (let y = 0; y < gridSize.y; y++) {
       for (let x = 0; x < gridSize.x; x++) {
         const geometry = new THREE.PlaneGeometry(
-          pieceSize.x * 0.95,
-          pieceSize.y * 0.95,
+          pieceSize.x * 0.98, // Slightly smaller than guide for visual gap
+          pieceSize.y * 0.98,
           32,
           32
         );
-
+  
         const material = new THREE.ShaderMaterial({
           uniforms: {
             map: { value: texture },
@@ -447,33 +456,37 @@ const PuzzleGame = () => {
           fragmentShader: puzzlePieceShader.fragmentShader,
           side: THREE.DoubleSide
         });
-
+  
         const piece = new THREE.Mesh(geometry, material);
         
-        piece.position.x = (x - gridSize.x / 2 + 0.5) * pieceSize.x;
-        piece.position.y = (y - gridSize.y / 2 + 0.5) * pieceSize.y;
+        // Position pieces with proper spacing
+        piece.position.x = (x - (gridSize.x - 1) / 2) * pieceSize.x;
+        piece.position.y = (y - (gridSize.y - 1) / 2) * pieceSize.y;
         piece.position.z = 0;
-
+  
         piece.userData.originalPosition = piece.position.clone();
         piece.userData.gridPosition = { x, y };
         piece.userData.isPlaced = false;
-
+  
         sceneRef.current.add(piece);
         puzzlePiecesRef.current.push(piece);
       }
     }
-
-    setTimeElapsed(0);
-    setIsTimerRunning(true);
-
-    // Scramble pieces
+  
+    // Adjust camera position for better view of larger pieces
+    if (cameraRef.current) {
+      cameraRef.current.position.z = 6; // Moved camera back to show larger pieces
+    }
+  
+    // Scramble pieces with wider distribution
     puzzlePiecesRef.current.forEach(piece => {
-      piece.position.x += (Math.random() - 0.5) * 2;
-      piece.position.y += (Math.random() - 0.5) * 2;
+      piece.position.x += (Math.random() - 0.5) * 4; // Increased scatter range
+      piece.position.y += (Math.random() - 0.5) * 4;
       piece.position.z += Math.random() * 0.5;
       piece.rotation.z = (Math.random() - 0.5) * 0.5;
     });
   };
+  
 
   // Initialize Three.js scene
   useEffect(() => {
@@ -859,6 +872,29 @@ const PuzzleGame = () => {
     </div>
   );
 
+  // Add this handler
+  const handleDifficultyChange = (newDifficulty) => {
+    if (gameState === 'playing') {
+      const confirmChange = window.confirm('Changing difficulty will reset the current puzzle. Continue?');
+      if (!confirmChange) return;
+    }
+    
+    setSelectedDifficulty(newDifficulty);
+    setDifficulty(newDifficulty.id);
+    if (image) {
+      setLoading(true);
+      createPuzzlePieces(image).then(() => {
+        setLoading(false);
+        setGameState('playing');
+        setIsTimerRunning(true);
+        setCompletedPieces(0);
+        setProgress(0);
+        setTimeElapsed(0);
+      });
+    }
+    setShowDifficultyModal(false);
+  };
+
   // Add this function inside the component
   // const handlePuzzleCompletion = async (puzzleData) => {
   //   if (!auth.currentUser) return;
@@ -1099,6 +1135,25 @@ const PuzzleGame = () => {
     animate();
   };
 
+  // Add difficulty modal component
+  const DifficultyModal = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-800 rounded-xl max-w-4xl w-full p-6">
+        <h2 className="text-2xl font-bold text-white mb-4">Select Difficulty</h2>
+        <DifficultySelector
+          selectedDifficulty={selectedDifficulty}
+          onSelect={(difficulty) => {
+            setSelectedDifficulty(difficulty);
+            setShowDifficultyModal(false);
+            if (image) {
+              createPuzzlePieces(image);
+            }
+          }}
+        />
+      </div>
+    </div>
+  );
+
   return (
     <div className="w-full h-screen flex flex-col bg-gradient-to-b from-gray-900 to-gray-800">
       {/* Header with controls - Enhanced UI */}
@@ -1168,6 +1223,22 @@ const PuzzleGame = () => {
               <Clock className="w-4 h-4 text-blue-400" />
               <span className="font-mono text-lg">{formatTime(timeElapsed)}</span>
             </div>
+
+            {/* Add Difficulty Bar */}
+            <DifficultyBar
+              selectedDifficulty={selectedDifficulty}
+              onSelect={handleDifficultyChange}
+            />
+
+            {/* Existing game controls */}
+            {gameState !== 'initial' && (
+              <button
+                onClick={togglePause}
+                className="p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+              >
+                {gameState === 'playing' ? <Pause /> : <Play />}
+              </button>
+            )}
           </div>
         </div>
 
@@ -1346,6 +1417,9 @@ const PuzzleGame = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Add difficulty modal */}
+      {showDifficultyModal && <DifficultyModal />}
     </div>
   );
 };

@@ -426,20 +426,23 @@ const PuzzleGame = () => {
     guideOutlinesRef.current.forEach(guide => sceneRef.current.remove(guide));
     guideOutlinesRef.current = [];
 
+    // Increase the size of guides (using 98% of piece size for visual gap)
     for (let y = 0; y < gridSize.y; y++) {
       for (let x = 0; x < gridSize.x; x++) {
         const outlineGeometry = new THREE.EdgesGeometry(
-          new THREE.PlaneGeometry(pieceSize.x * 0.95, pieceSize.y * 0.95)
+          new THREE.PlaneGeometry(pieceSize.x * 0.98, pieceSize.y * 0.98)
         );
         const outlineMaterial = new THREE.LineBasicMaterial({ 
           color: 0x4a90e2,
           transparent: true,
-          opacity: 0.5
+          opacity: 0.5,
+          linewidth: 2 // Note: linewidth may not work in WebGL
         });
         const outline = new THREE.LineSegments(outlineGeometry, outlineMaterial);
 
-        outline.position.x = (x - gridSize.x / 2 + 0.5) * pieceSize.x;
-        outline.position.y = (y - gridSize.y / 2 + 0.5) * pieceSize.y;
+        // Position guides with proper spacing
+        outline.position.x = (x - (gridSize.x - 1) / 2) * pieceSize.x;
+        outline.position.y = (y - (gridSize.y - 1) / 2) * pieceSize.y;
         outline.position.z = -0.01;
 
         sceneRef.current.add(outline);
@@ -460,10 +463,14 @@ const PuzzleGame = () => {
     const texture = await new THREE.TextureLoader().loadAsync(imageUrl);
     const aspectRatio = texture.image.width / texture.image.height;
     
-    const gridSize = { x: 4, y: 3 };
+    // Adjust base size to be larger
+    const baseSize = 2.5; // Increased base size for better visibility
+    
+    // Reduced grid size for larger pieces
+    const gridSize = { x: 3, y: 2 }; // Fewer pieces for cultural puzzles
     const pieceSize = {
-      x: 1 * aspectRatio / gridSize.x,
-      y: 1 / gridSize.y
+      x: (baseSize * aspectRatio) / gridSize.x,
+      y: baseSize / gridSize.y
     };
 
     setTotalPieces(gridSize.x * gridSize.y);
@@ -472,8 +479,8 @@ const PuzzleGame = () => {
     for (let y = 0; y < gridSize.y; y++) {
       for (let x = 0; x < gridSize.x; x++) {
         const geometry = new THREE.PlaneGeometry(
-          pieceSize.x * 0.95,
-          pieceSize.y * 0.95,
+          pieceSize.x * 0.98, // Slightly smaller than guide for visual gap
+          pieceSize.y * 0.98,
           32,
           32
         );
@@ -496,8 +503,9 @@ const PuzzleGame = () => {
 
         const piece = new THREE.Mesh(geometry, material);
         
-        piece.position.x = (x - gridSize.x / 2 + 0.5) * pieceSize.x;
-        piece.position.y = (y - gridSize.y / 2 + 0.5) * pieceSize.y;
+        // Position pieces with proper spacing
+        piece.position.x = (x - (gridSize.x - 1) / 2) * pieceSize.x;
+        piece.position.y = (y - (gridSize.y - 1) / 2) * pieceSize.y;
         piece.position.z = 0;
 
         piece.userData.originalPosition = piece.position.clone();
@@ -509,13 +517,15 @@ const PuzzleGame = () => {
       }
     }
 
-    setTimeElapsed(0);
-    setIsTimerRunning(true);
+    // Adjust camera position for better view of larger pieces
+    if (cameraRef.current) {
+      cameraRef.current.position.z = 7; // Moved camera back to show larger pieces
+    }
 
-    // Scramble pieces
+    // Scramble pieces with wider distribution
     puzzlePiecesRef.current.forEach(piece => {
-      piece.position.x += (Math.random() - 0.5) * 2;
-      piece.position.y += (Math.random() - 0.5) * 2;
+      piece.position.x += (Math.random() - 0.5) * 5; // Increased scatter range
+      piece.position.y += (Math.random() - 0.5) * 5;
       piece.position.z += Math.random() * 0.5;
       piece.rotation.z = (Math.random() - 0.5) * 0.5;
     });
