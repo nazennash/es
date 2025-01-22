@@ -4,7 +4,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
-import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, Play, Pause } from 'lucide-react';
+import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, Play, Pause, Share2, Download } from 'lucide-react';
+import html2canvas from 'html2canvas';
 
 // Difficulty presets
 const DIFFICULTY_SETTINGS = {
@@ -177,6 +178,7 @@ const PuzzleGame = () => {
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [gameState, setGameState] = useState('initial'); // 'initial', 'playing', 'paused'
   const [showThumbnail, setShowThumbnail] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // Refs
   const containerRef = useRef(null);
@@ -191,6 +193,7 @@ const PuzzleGame = () => {
   const selectedPieceRef = useRef(null);
   const timerRef = useRef(null);
   const guideOutlinesRef = useRef([]);
+  const puzzleContainerRef = useRef(null);
 
   const defaultCameraPosition = { x: 0, y: 0, z: 5 };
   const defaultControlsTarget = new THREE.Vector3(0, 0, 0);
@@ -510,6 +513,7 @@ const PuzzleGame = () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
+      setShowShareModal(true);
     }
   }, [progress]);
 
@@ -635,6 +639,87 @@ const PuzzleGame = () => {
     reader.readAsDataURL(file);
   };
 
+  const capturePuzzleImage = async () => {
+    if (!puzzleContainerRef.current) return null;
+    try {
+      const canvas = await html2canvas(puzzleContainerRef.current);
+      return canvas.toDataURL('image/png');
+    } catch (err) {
+      console.error('Failed to capture puzzle image:', err);
+      return null;
+    }
+  };
+  
+  const downloadPuzzleImage = async () => {
+    const imageData = await capturePuzzleImage();
+    if (!imageData) return;
+  
+    const link = document.createElement('a');
+    link.href = imageData;
+    link.download = `custom-puzzle-${Date.now()}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+  
+  const shareToFacebook = () => {
+    const url = encodeURIComponent(window.location.href);
+    const text = encodeURIComponent(`I just completed a custom puzzle in ${formatTime(timeElapsed)}! Try creating your own!`);
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, '_blank');
+  };
+  
+  const shareToTwitter = () => {
+    const url = encodeURIComponent(window.location.href);
+    const text = encodeURIComponent(`I just completed a custom puzzle in ${formatTime(timeElapsed)}! #PuzzleGame`);
+    window.open(`https://twitter.com/intent/tweet?url=${url}&text=${text}`, '_blank');
+  };
+  
+  const shareToWhatsApp = () => {
+    const url = encodeURIComponent(window.location.href);
+    const text = encodeURIComponent(`I just completed a custom puzzle in ${formatTime(timeElapsed)}! Create yours: `);
+    window.open(`https://wa.me/?text=${text}%20${url}`, '_blank');
+  };
+
+  const ShareModal = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white p-6 rounded-lg shadow-xl max-w-md w-full">
+        <h3 className="text-xl font-bold mb-4">Share Your Achievement</h3>
+        <div className="space-y-4">
+          <button
+            onClick={shareToFacebook}
+            className="w-full p-3 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Share on Facebook
+          </button>
+          <button
+            onClick={shareToTwitter}
+            className="w-full p-3 bg-sky-400 text-white rounded hover:bg-sky-500"
+          >
+            Share on Twitter
+          </button>
+          <button
+            onClick={shareToWhatsApp}
+            className="w-full p-3 bg-green-500 text-white rounded hover:bg-green-600"
+          >
+            Share on WhatsApp
+          </button>
+          <button
+            onClick={downloadPuzzleImage}
+            className="w-full p-3 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 flex items-center justify-center gap-2"
+          >
+            <Download className="h-4 w-4" /> Download Image
+          </button>
+        </div>
+        <button
+          onClick={() => setShowShareModal(false)}
+          className="mt-4 w-full p-2 border border-gray-300 rounded hover:bg-gray-50"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="w-full h-screen flex flex-col bg-gray-900">
       {/* Header with controls */}
@@ -713,10 +798,23 @@ const PuzzleGame = () => {
             )}
           </div>
         )}
+        <div className="flex items-center gap-2">
+          {/* ...existing controls... */}
+          
+          {progress === 100 && (
+            <button
+              onClick={() => setShowShareModal(true)}
+              className="p-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
+              title="Share Achievement"
+            >
+              <Share2 className="w-5 h-5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main puzzle area */}
-      <div className="flex-1 relative">
+      <div ref={puzzleContainerRef} className="flex-1 relative">
         <div ref={containerRef} className="w-full h-full" />
 
         {/* Camera controls overlay */}
@@ -779,6 +877,7 @@ const PuzzleGame = () => {
           </div>
         )}
       </div>
+      {showShareModal && <ShareModal />}
     </div>
   );
 };
