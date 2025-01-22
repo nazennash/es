@@ -577,6 +577,9 @@ const PuzzleGame = () => {
     const offset = new THREE.Vector3();
     
     const handleMouseDown = (event) => {
+      // Prevent interaction if game is not in playing state
+      if (gameState !== 'playing') return;
+      
       event.preventDefault();
       
       // Calculate mouse position in normalized device coordinates
@@ -617,6 +620,9 @@ const PuzzleGame = () => {
     };
 
     const handleMouseMove = (event) => {
+      // Prevent interaction if game is not in playing state
+      if (gameState !== 'playing') return;
+      
       if (!isDragging || !selectedPieceRef.current) return;
 
       // Update mouse position
@@ -647,8 +653,23 @@ const PuzzleGame = () => {
     };
 
     const handleMouseUp = () => {
+      // Allow mouseUp to work even if not playing, to ensure cleanup
       if (!selectedPieceRef.current) return;
-
+      
+      // Reset piece state and position if game is not in playing mode
+      if (gameState !== 'playing') {
+        if (selectedPieceRef.current.material.uniforms) {
+          selectedPieceRef.current.material.uniforms.selected.value = 0.0;
+          selectedPieceRef.current.material.uniforms.correctPosition.value = 
+            selectedPieceRef.current.userData.isPlaced ? 1.0 : 0.0;
+        }
+        selectedPieceRef.current.position.z = 0;
+        selectedPieceRef.current = null;
+        isDragging = false;
+        controlsRef.current.enabled = true;
+        return;
+      }
+      
       // Check if piece is close enough to its correct position
       const originalPos = selectedPieceRef.current.userData.originalPosition;
       const distance = originalPos.distanceTo(selectedPieceRef.current.position);
@@ -700,7 +721,7 @@ const PuzzleGame = () => {
       element.removeEventListener('mouseup', handleMouseUp);
       element.removeEventListener('mouseleave', handleMouseUp);
     };
-  }, [totalPieces]);
+  }, [gameState, totalPieces]);
 
   // Handle image upload
   const handleImageUpload = (event) => {
