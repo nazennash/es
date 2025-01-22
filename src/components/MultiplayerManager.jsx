@@ -899,7 +899,7 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
 
     const link = document.createElement('a');
     link.href = imageData;
-    link.download = `multiplayer-puzzle-${gameId}.png`;
+    link.download = `multiplayer-puzzle-${gameId}-${Date.now()}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -907,19 +907,21 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
 
   const shareToFacebook = () => {
     const url = encodeURIComponent(window.location.href);
-    const text = encodeURIComponent(`I just completed a multiplayer puzzle with friends in ${formatTime(timeElapsed)}! Join me for another round!`);
+    const playerCount = Object.keys(players).length;
+    const text = encodeURIComponent(`I just completed a multiplayer puzzle with ${playerCount} players in ${formatTime(timeElapsed)}! Join me for another round!`);
     window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, '_blank');
   };
 
   const shareToTwitter = () => {
     const url = encodeURIComponent(window.location.href);
-    const text = encodeURIComponent(`I just completed a multiplayer puzzle with friends in ${formatTime(timeElapsed)}! #PuzzleGame`);
+    const playerCount = Object.keys(players).length;
+    const text = encodeURIComponent(`Just finished a ${playerCount}-player puzzle challenge in ${formatTime(timeElapsed)}! #MultiplayerPuzzle #GameNight`);
     window.open(`https://twitter.com/intent/tweet?url=${url}&text=${text}`, '_blank');
   };
 
   const shareToWhatsApp = () => {
     const url = encodeURIComponent(window.location.href);
-    const text = encodeURIComponent(`I just completed a multiplayer puzzle with friends in ${formatTime(timeElapsed)}! Join me: `);
+    const text = encodeURIComponent(`Join me for a multiplayer puzzle challenge! We just completed one in ${formatTime(timeElapsed)}. Click here to play: `);
     window.open(`https://wa.me/?text=${text}%20${url}`, '_blank');
   };
 

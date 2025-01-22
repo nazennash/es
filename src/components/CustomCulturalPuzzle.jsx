@@ -658,10 +658,6 @@ const PuzzleGame = () => {
       return canvas.toDataURL('image/png');
     } catch (err) {
       console.error('Failed to capture puzzle image:', err);
-      setUi(prev => ({
-        ...prev,
-        error: { type: 'error', message: 'Failed to capture puzzle image' }
-      }));
       return null;
     }
   };
@@ -672,7 +668,7 @@ const PuzzleGame = () => {
 
     const link = document.createElement('a');
     link.href = imageData;
-    link.download = `puzzle-${gameState.gameId}.png`;
+    link.download = `cultural-puzzle-${selectedImage?.title || 'untitled'}-${Date.now()}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -680,19 +676,19 @@ const PuzzleGame = () => {
 
   const shareToFacebook = () => {
     const url = encodeURIComponent(window.location.href);
-    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself!`);
+    const text = encodeURIComponent(`I just completed the ${selectedImage?.title || 'cultural'} puzzle in ${formatTime(timeElapsed)}! Try this amazing puzzle game!`);
     window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}&quote=${text}`, '_blank');
   };
 
   const shareToTwitter = () => {
     const url = encodeURIComponent(window.location.href);
-    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself! #PuzzleGame`);
+    const text = encodeURIComponent(`I just completed the ${selectedImage?.title || 'cultural'} puzzle in ${formatTime(timeElapsed)}! #PuzzleGame #Culture`);
     window.open(`https://twitter.com/intent/tweet?url=${url}&text=${text}`, '_blank');
   };
 
   const shareToWhatsApp = () => {
     const url = encodeURIComponent(window.location.href);
-    const text = encodeURIComponent(`I just completed a ${gameState.difficulty}x${gameState.difficulty} puzzle in ${Math.floor(gameState.timer / 60)}:${String(gameState.timer % 60).padStart(2, '0')}! Try it yourself!`);
+    const text = encodeURIComponent(`I just completed the ${selectedImage?.title || 'cultural'} puzzle in ${formatTime(timeElapsed)}! Try it here: `);
     window.open(`https://wa.me/?text=${text}%20${url}`, '_blank');
   };
 
