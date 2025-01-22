@@ -1238,4 +1238,21 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
   );
 };
 
+const MultiplayerManager = ({ gameId, isHost, user }) => {
+  const { 
+    players, 
+    gameState, 
+    handleGameCompletion 
+  } = useMultiplayerGame(gameId);
+
+  // Add completion handler
+  useEffect(() => {
+    if (progress === 100) {
+      handleGameCompletion(timeElapsed);
+    }
+  }, [progress]);
+
+  // ...existing code...
+};
+
 export default PuzzleGame;

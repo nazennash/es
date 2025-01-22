@@ -212,6 +212,8 @@ const PuzzleGame = () => {
   const [showThumbnail, setShowThumbnail] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [startTime, setStartTime] = useState(null);
+  const [difficulty, setDifficulty] = useState(4);
 
   // Refs
   const containerRef = useRef(null);
@@ -242,7 +244,7 @@ const PuzzleGame = () => {
   const startGame = () => {
     setGameState('playing');
     setIsTimerRunning(true);
-
+    setStartTime(Date.now());
   };
 
   const updateGameState = async (newState) => {
@@ -780,6 +782,22 @@ const PuzzleGame = () => {
       sceneRef.current.remove(highlightMesh);
     }, 2000);
   };
+
+  // Add completion handler
+  useEffect(() => {
+    if (progress === 100) {
+      const selectedPuzzle = PUZZLE_IMAGES.find(img => img.src === selectedImage);
+      handlePuzzleCompletion({
+        puzzleId: `cultural_${selectedPuzzle?.id || Date.now()}`,
+        userId: auth.currentUser.uid,
+        playerName: auth.currentUser.displayName || 'Anonymous',
+        startTime,
+        difficulty,
+        imageUrl: selectedImage,
+        timer: timeElapsed
+      });
+    }
+  }, [progress]);
 
   return (
     <div className="w-full h-screen flex flex-col bg-gray-900">

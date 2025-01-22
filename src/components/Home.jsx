@@ -191,6 +191,11 @@ const Home = ({ user }) => {
           </div>
         </div>
 
+        {/* Add Quick Access section */}
+        <div className="mt-8">
+          <QuickAccess userId={user.uid} />
+        </div>
+
         {/* Recent Puzzles */}
         <div className="bg-white rounded-lg shadow">
           <div className="p-6">

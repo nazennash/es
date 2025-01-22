@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { database, ref, set, onValue, update, remove, onDisconnect, auth } from '../firebase';
+import { handlePuzzleCompletion } from '../components/PuzzleCompletionHandler';
 
 export const useMultiplayerGame = (gameId) => {
   const [players, setPlayers] = useState({});
@@ -182,6 +183,31 @@ export const useMultiplayerGame = (gameId) => {
     }
   };
 
+  const handleGameCompletion = async (finalTime) => {
+    try {
+      // Update game completion state
+      await update(ref(database, `games/${gameId}`), {
+        isCompleted: true,
+        completionTime: finalTime,
+        completedBy: currentUser.uid,
+        completedAt: Date.now()
+      });
+
+      // Record score and stats
+      await handlePuzzleCompletion({
+        puzzleId: `multiplayer_${gameId}`,
+        userId: currentUser.uid,
+        playerName: currentUser.displayName || 'Anonymous',
+        startTime: gameState.startedAt,
+        difficulty: gameState.difficulty || 4,
+        imageUrl: gameState.puzzle?.imageUrl,
+        timer: finalTime
+      });
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+
   return {
     players,
     gameState,
@@ -194,6 +220,7 @@ export const useMultiplayerGame = (gameId) => {
     syncPieceMovement,
     lockPiece,
     unlockPiece,
-    updateCursorPosition
+    updateCursorPosition,
+    handleGameCompletion
   };
 };

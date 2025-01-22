@@ -6,6 +6,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
 import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, Play, Pause, Share2, Download } from 'lucide-react';
 import html2canvas from 'html2canvas';
+import { auth } from '../firebase-config'; // Add this import if not already present
 
 // Difficulty presets
 const DIFFICULTY_SETTINGS = {
@@ -186,6 +187,8 @@ const PuzzleGame = () => {
   const [gameState, setGameState] = useState('initial'); // 'initial', 'playing', 'paused'
   const [showThumbnail, setShowThumbnail] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [startTime, setStartTime] = useState(null);
+  const [difficulty, setDifficulty] = useState(4); // default difficulty
 
   // Refs
   const containerRef = useRef(null);
@@ -216,7 +219,7 @@ const PuzzleGame = () => {
   const startGame = () => {
     setGameState('playing');
     setIsTimerRunning(true);
-
+    setStartTime(Date.now());
   };
 
   const updateGameState = async (newState) => {
@@ -726,6 +729,36 @@ const PuzzleGame = () => {
     </div>
   );
 
+  // Add this function inside the component
+  const handlePuzzleCompletion = async (puzzleData) => {
+    if (!auth.currentUser) return;
+    
+    try {
+      const db = getFirestore();
+      await addDoc(collection(db, 'completed_puzzles'), {
+        ...puzzleData,
+        completedAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Error saving puzzle completion:', error);
+    }
+  };
+
+  // Modify the completion effect
+  useEffect(() => {
+    if (progress === 100 && auth?.currentUser) {
+      handlePuzzleCompletion({
+        puzzleId: `custom_${Date.now()}`,
+        userId: auth.currentUser.uid,
+        playerName: auth.currentUser.displayName || 'Anonymous',
+        startTime,
+        difficulty,
+        imageUrl: image,
+        timer: timeElapsed
+      });
+    }
+  }, [progress, startTime, difficulty, image, timeElapsed]);
+
   return (
     <div className="w-full h-screen flex flex-col bg-gray-900">
       {/* Header with controls */}
@@ -959,3 +992,18 @@ const handlePieceComplete = (piece) => {
   };
   animateRipple();
 };
+
+// Add completion handler
+useEffect(() => {
+  if (progress === 100 && auth?.currentUser) {
+    handlePuzzleCompletion({
+      puzzleId: `custom_${Date.now()}`,
+      userId: auth.currentUser.uid,
+      playerName: auth.currentUser.displayName || 'Anonymous',
+      startTime,
+      difficulty,
+      imageUrl: image,
+      timer: timeElapsed
+    });
+  }
+}, [progress, auth, startTime, difficulty, image, timeElapsed]);
