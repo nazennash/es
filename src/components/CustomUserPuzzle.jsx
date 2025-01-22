@@ -594,84 +594,94 @@ const PuzzleGame = () => {
 
   // Handle piece selection and movement
   useEffect(() => {
-    if (!rendererRef.current) return;
+    if (!rendererRef.current || !sceneRef.current || !cameraRef.current) return;
 
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let isDragging = false;
-    let dragPlane = new THREE.Plane();
-    const dragOffset = new THREE.Vector3();
+    const dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    const intersection = new THREE.Vector3();
+    const offset = new THREE.Vector3();
     
     const handleMouseDown = (event) => {
       event.preventDefault();
       
+      // Calculate mouse position in normalized device coordinates
       const rect = rendererRef.current.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
+      // Update the picking ray with the camera and mouse position
       raycaster.setFromCamera(mouse, cameraRef.current);
+
+      // Find intersected objects
       const intersects = raycaster.intersectObjects(puzzlePiecesRef.current);
 
       if (intersects.length > 0) {
         const piece = intersects[0].object;
         
-        // Prevent interaction if piece is already placed
+        // Skip if piece is already placed
         if (piece.userData.isPlaced) return;
 
         isDragging = true;
         selectedPieceRef.current = piece;
         controlsRef.current.enabled = false;
 
-        // Play pickup sound
-        if (piece.userData.onPickup) {
-          piece.userData.onPickup();
+        // Calculate the intersection point on the drag plane
+        raycaster.ray.intersectPlane(dragPlane, intersection);
+        
+        // Store offset for smooth dragging
+        offset.copy(piece.position).sub(intersection);
+
+        // Update shader uniforms
+        if (piece.material.uniforms) {
+          piece.material.uniforms.selected.value = 1.0;
         }
 
-        // Calculate drag offset and update shader
-        const intersectPoint = new THREE.Vector3();
-        raycaster.ray.intersectPlane(
-          new THREE.Plane(new THREE.Vector3(0, 0, 1)),
-          intersectPoint
-        );
-        dragOffset.subVectors(selectedPieceRef.current.position, intersectPoint);
-
-        if (selectedPieceRef.current.material.uniforms) {
-          selectedPieceRef.current.material.uniforms.selected.value = 1.0;
-        }
+        // Bring piece to front
+        piece.position.z = 0.1;
       }
     };
 
     const handleMouseMove = (event) => {
       if (!isDragging || !selectedPieceRef.current) return;
 
+      // Update mouse position
       const rect = rendererRef.current.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
+      // Update the picking ray and find intersection with drag plane
       raycaster.setFromCamera(mouse, cameraRef.current);
-      const intersectPoint = new THREE.Vector3();
-      raycaster.ray.intersectPlane(dragPlane, intersectPoint);
+      raycaster.ray.intersectPlane(dragPlane, intersection);
+
+      // Update piece position with offset
+      selectedPieceRef.current.position.copy(intersection.add(offset));
       
-      selectedPieceRef.current.position.copy(intersectPoint).add(dragOffset);
-      
+      // Check distance to original position for snapping feedback
       const originalPos = selectedPieceRef.current.userData.originalPosition;
       const distance = originalPos.distanceTo(selectedPieceRef.current.position);
       
-      if (distance < 0.3) {
-        selectedPieceRef.current.material.uniforms.correctPosition.value = 
-          1.0 - (distance / 0.3);
-      } else {
-        selectedPieceRef.current.material.uniforms.correctPosition.value = 0.0;
+      // Update shader feedback
+      if (selectedPieceRef.current.material.uniforms) {
+        if (distance < 0.3) {
+          selectedPieceRef.current.material.uniforms.correctPosition.value = 
+            1.0 - (distance / 0.3);
+        } else {
+          selectedPieceRef.current.material.uniforms.correctPosition.value = 0.0;
+        }
       }
     };
 
     const handleMouseUp = () => {
       if (!selectedPieceRef.current) return;
 
+      // Check if piece is close enough to its correct position
       const originalPos = selectedPieceRef.current.userData.originalPosition;
       const distance = originalPos.distanceTo(selectedPieceRef.current.position);
 
       if (distance < 0.3) {
+        // Snap to position
         handlePieceSnap(selectedPieceRef.current);
         
         if (!selectedPieceRef.current.userData.isPlaced) {
@@ -681,26 +691,36 @@ const PuzzleGame = () => {
             setProgress((newCount / totalPieces) * 100);
             return newCount;
           });
-
           handlePieceComplete(selectedPieceRef.current);
         }
       }
 
-      selectedPieceRef.current.material.uniforms.selected.value = 0.0;
-      selectedPieceRef.current.material.uniforms.correctPosition.value = 
-        selectedPieceRef.current.userData.isPlaced ? 1.0 : 0.0;
+      // Reset piece state
+      if (selectedPieceRef.current.material.uniforms) {
+        selectedPieceRef.current.material.uniforms.selected.value = 0.0;
+        selectedPieceRef.current.material.uniforms.correctPosition.value = 
+          selectedPieceRef.current.userData.isPlaced ? 1.0 : 0.0;
+      }
+
+      // Reset z-position if not placed
+      if (!selectedPieceRef.current.userData.isPlaced) {
+        selectedPieceRef.current.position.z = 0;
+      }
       
+      // Clear selection and re-enable controls
       selectedPieceRef.current = null;
       isDragging = false;
       controlsRef.current.enabled = true;
     };
 
+    // Add event listeners
     const element = rendererRef.current.domElement;
     element.addEventListener('mousedown', handleMouseDown);
     element.addEventListener('mousemove', handleMouseMove);
     element.addEventListener('mouseup', handleMouseUp);
     element.addEventListener('mouseleave', handleMouseUp);
 
+    // Cleanup
     return () => {
       element.removeEventListener('mousedown', handleMouseDown);
       element.removeEventListener('mousemove', handleMouseMove);
