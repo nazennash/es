@@ -28,15 +28,31 @@ const ACHIEVEMENTS = [
 // 3. Helper Classes
 class SoundSystem {
   constructor() {
-    this.context = new (window.AudioContext || window.webkitAudioContext)();
+    this.context = null;
     this.sounds = {};
     this.enabled = true;
+    this.initialized = false;
+  }
+
+  async initializeContext() {
+    if (this.initialized) return;
+    
+    try {
+      this.context = new (window.AudioContext || window.webkitAudioContext)();
+      await this.context.resume();
+      await this.initialize();
+      this.initialized = true;
+    } catch (error) {
+      console.error('Failed to initialize audio context:', error);
+    }
   }
 
   async initialize() {
-    this.sounds.pickup = this.createToneBuffer(440, 0.1);
-    this.sounds.place = this.createToneBuffer(880, 0.15);
-    this.sounds.complete = this.createToneBuffer([523.25, 659.25, 783.99], 0.3);
+    if (!this.context) return;
+    
+    this.sounds.pickup = await this.createToneBuffer(440, 0.1);
+    this.sounds.place = await this.createToneBuffer(880, 0.15);
+    this.sounds.complete = await this.createToneBuffer([523.25, 659.25, 783.99], 0.3);
   }
 
   createToneBuffer(frequency, duration) {
@@ -55,8 +71,14 @@ class SoundSystem {
     return buffer;
   }
 
-  play(soundName) {
-    if (!this.enabled || !this.sounds[soundName]) return;
+  async play(soundName) {
+    if (!this.enabled || !this.sounds[soundName] || !this.context) return;
+    
+    // Ensure context is running
+    if (this.context.state === 'suspended') {
+      await this.context.resume();
+    }
+    
     const source = this.context.createBufferSource();
     source.buffer = this.sounds[soundName];
     source.connect(this.context.destination);
@@ -248,11 +270,15 @@ const PuzzleGame = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const startGame = () => {
+  const startGame = async () => {
     if (!image) {
       alert('Please upload an image first');
       return;
     }
+    
+    // Initialize audio on game start
+    await initializeAudio();
+    
     setGameState('playing');
     setIsTimerRunning(true);
     setStartTime(Date.now());
@@ -561,7 +587,7 @@ const PuzzleGame = () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
-      setShowShareModal(true);
+      synchronousCompletion();
     }
   }, [progress]);
 
@@ -847,40 +873,104 @@ const PuzzleGame = () => {
   // Modify the completion effect
   useEffect(() => {
     if (progress === 100 && auth?.currentUser) {
-      handlePuzzleCompletion({
+      const completionData = {
         puzzleId: `custom_${Date.now()}`,
         userId: auth.currentUser.uid,
         playerName: auth.currentUser.displayName || 'Anonymous',
         startTime,
         difficulty,
         imageUrl: image,
+        timer: timeElapsed,
+        completedAt: new Date(),
+        totalPieces,
+        completedPieces
+      };
+      
+      console.log('Puzzle Completion Data:', completionData);
+      handlePuzzleCompletion(completionData);
+      
+      // Log achievement data
+      const achievements = checkAchievements();
+      console.log('Achievements Earned:', achievements);
+      
+      // Update game state
+      if (gameId) {
+        const gameUpdateData = {
+          state: 'completed',
+          completionTime: timeElapsed,
+          achievements: achievements.map(a => a.id)
+        };
+        console.log('Game State Update:', gameUpdateData);
+        updateGameState(gameUpdateData);
+      }
+    }
+  }, [progress, startTime, difficulty, image, timeElapsed, totalPieces, completedPieces]);
+
+  // Add synchronous completion handler
+  const synchronousCompletion = async () => {
+    try {
+      console.log('Starting synchronous completion process...');
+      
+      // Wait for puzzle completion
+      await handlePuzzleCompletion({
+        puzzleId: `custom_${Date.now()}`,
+        userId: auth?.currentUser?.uid,
+        playerName: auth?.currentUser?.displayName || 'Anonymous',
+        startTime,
+        difficulty,
+        imageUrl: image,
         timer: timeElapsed
       });
+      
+      // Wait for achievements check
+      const achievements = checkAchievements();
+      console.log('Processing achievements:', achievements);
+      
+      // Wait for game state update
+      if (gameId) {
+        await updateGameState({
+          state: 'completed',
+          completionTime: timeElapsed,
+          achievements: achievements.map(a => a.id)
+        });
+      }
+      
+      console.log('Completion process finished successfully');
+      setShowShareModal(true);
+    } catch (error) {
+      console.error('Error in completion process:', error);
     }
-  }, [progress, startTime, difficulty, image, timeElapsed]);
+  };
 
   // Add sound initialization
   useEffect(() => {
     const soundSystem = new SoundSystem();
-    soundSystem.initialize();
-    
-    // Store in ref for access in component
     soundRef.current = soundSystem;
     
+    // Cleanup
     return () => {
-      // Cleanup sound system
-      if (soundRef.current) {
+      if (soundRef.current?.context) {
         soundRef.current.context.close();
       }
     };
   }, []);
 
+  // Add sound initialization on first interaction
+  const initializeAudio = async () => {
+    if (soundRef.current && !soundRef.current.initialized) {
+      await soundRef.current.initializeContext();
+    }
+  };
+
   // Add mouse interaction handling
   const setupMouseInteraction = () => {
     if (!rendererRef.current || !sceneRef.current || !cameraRef.current) return;
   
-    const handlePieceInteraction = (event, piece) => {
+    const handlePieceInteraction = async (event, piece) => {
       if (!piece || piece.userData.isPlaced) return;
+      
+      // Ensure audio is initialized on first interaction
+      await initializeAudio();
       
       // Update piece visual feedback
       if (piece.material.uniforms) {
@@ -963,44 +1053,47 @@ const PuzzleGame = () => {
     }
   };
 
-  const handlePieceComplete = (piece) => {
-  if (!piece) return;
-  
-  // Visual effects
-  particleSystemRef.current?.emit(piece.position, 30);
-  
-  // Sound effect
-  soundRef.current?.play('place');
-  
-  // Add ripple effect
-  const ripple = new THREE.Mesh(
-    new THREE.CircleGeometry(0.1, 32),
-    new THREE.MeshBasicMaterial({
-      color: 0x4a90e2,
-      transparent: true,
-      opacity: 0.5
-    })
-  );
-  
-  ripple.position.copy(piece.position);
-  ripple.position.z = 0.01;
-  sceneRef.current.add(ripple);
-
-  // Animate ripple
-  const animate = () => {
-    const scale = ripple.scale.x + 0.05;
-    ripple.scale.set(scale, scale, 1);
-    ripple.material.opacity -= 0.02;
+  const handlePieceComplete = async (piece) => {
+    if (!piece) return;
     
-    if (ripple.material.opacity > 0) {
-      requestAnimationFrame(animate);
-    } else {
-      sceneRef.current.remove(ripple);
-    }
-  };
+    // Ensure audio is initialized
+    await initializeAudio();
+    
+    // Play sound effect
+    soundRef.current?.play('place');
+    
+    // Visual effects
+    particleSystemRef.current?.emit(piece.position, 30);
+    
+    // Add ripple effect
+    const ripple = new THREE.Mesh(
+      new THREE.CircleGeometry(0.1, 32),
+      new THREE.MeshBasicMaterial({
+        color: 0x4a90e2,
+        transparent: true,
+        opacity: 0.5
+      })
+    );
+    
+    ripple.position.copy(piece.position);
+    ripple.position.z = 0.01;
+    sceneRef.current.add(ripple);
   
-  animate();
-};
+    // Animate ripple
+    const animate = () => {
+      const scale = ripple.scale.x + 0.05;
+      ripple.scale.set(scale, scale, 1);
+      ripple.material.opacity -= 0.02;
+      
+      if (ripple.material.opacity > 0) {
+        requestAnimationFrame(animate);
+      } else {
+        sceneRef.current.remove(ripple);
+      }
+    };
+    
+    animate();
+  };
 
   return (
     <div className="w-full h-screen flex flex-col bg-gray-900">

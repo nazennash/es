@@ -10,6 +10,15 @@ export const handlePuzzleCompletion = async ({
   imageUrl,
   timer
 }) => {
+  console.log('Starting puzzle completion handler with data:', {
+    puzzleId,
+    userId,
+    playerName,
+    startTime,
+    difficulty,
+    timer
+  });
+
   const db = getFirestore();
   const rtdb = getDatabase();
   
@@ -17,7 +26,7 @@ export const handlePuzzleCompletion = async ({
     const completionTime = timer;
     const timestamp = new Date();
 
-    // Add score to puzzle_scores collection with more detailed data
+    // Log score data before saving
     const scoreData = {
       puzzleId,
       userId,
@@ -27,15 +36,15 @@ export const handlePuzzleCompletion = async ({
       timestamp,
       imageUrl,
       gameMode: puzzleId.startsWith('multiplayer_') ? 'multiplayer' : 'single',
-      // Add rank calculation data
       timePerPiece: completionTime / (difficulty * difficulty),
       difficultyMultiplier: Math.pow(difficulty, 1.5)
     };
-    console.log('Score Data:', scoreData);
-    await addDoc(collection(db, 'puzzle_scores'), scoreData);
+    console.log('Preparing to save score data:', scoreData);
+    const scoreDoc = await addDoc(collection(db, 'puzzle_scores'), scoreData);
+    console.log('Score saved with ID:', scoreDoc.id);
 
-    // Add to completed_puzzles collection
-    let puzzleData = {
+    // Log puzzle data before saving
+    const puzzleData = {
       puzzleId,
       userId,
       completionTime,
@@ -44,11 +53,12 @@ export const handlePuzzleCompletion = async ({
       thumbnail: imageUrl,
       name: `${difficulty}x${difficulty} Puzzle`
     };
-    console.log('Puzzle Data:', puzzleData);
-    await addDoc(collection(db, 'completed_puzzles'), puzzleData);
+    console.log('Preparing to save puzzle data:', puzzleData);
+    const puzzleDoc = await addDoc(collection(db, 'completed_puzzles'), puzzleData);
+    console.log('Puzzle completion saved with ID:', puzzleDoc.id);
 
     // Add additional metadata for better history tracking
-    puzzleData = {
+    const updatedPuzzleData = {
       ...puzzleData,
       mode: puzzleId.split('_')[0], // 'custom', 'cultural', or 'multiplayer'
       attemptCount: 1,
@@ -60,7 +70,7 @@ export const handlePuzzleCompletion = async ({
 
     // Create quick access entry
     await setDoc(doc(db, `user_puzzles/${userId}/saved/${puzzleId}`), {
-      ...puzzleData,
+      ...updatedPuzzleData,
       lastPlayed: new Date(),
       bestTime: completionTime,
       timesPlayed: increment(1)
@@ -104,25 +114,30 @@ export const handlePuzzleCompletion = async ({
       });
     }
 
-    // Update realtime game state
-    const gameRef = ref(rtdb, `games/${puzzleId}`);
-    const gameSnap = await get(gameRef);
-    const gameData = gameSnap.val();
-
-    if (gameData) {
+    // Log realtime database updates
+    if (puzzleId) {
+      const gameRef = ref(rtdb, `games/${puzzleId}`);
       const updates = {
-        [`games/${puzzleId}/isCompleted`]: true,
-        [`games/${puzzleId}/completionTime`]: completionTime,
-        [`games/${puzzleId}/completedBy`]: userId
+        isCompleted: true,
+        completionTime,
+        completedBy: userId,
+        completedAt: timestamp.toISOString()
       };
-      console.log('Realtime Database Updates:', updates);
-      await update(ref(rtdb), updates);
+      console.log('Preparing realtime database updates:', updates);
+      await update(gameRef, updates);
+      console.log('Realtime database updated successfully');
     }
 
-    return { success: true, completionTime, score: scoreData };
+    console.log('Puzzle completion handler finished successfully');
+    return { 
+      success: true, 
+      completionTime, 
+      scoreId: scoreDoc.id,
+      puzzleDocId: puzzleDoc.id
+    };
   } catch (error) {
-    console.error('Error handling puzzle completion:', error);
-    throw new Error('Failed to record puzzle completion');
+    console.error('Error in puzzle completion handler:', error);
+    throw error;
   }
 };
 

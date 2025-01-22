@@ -6,10 +6,16 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
 import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, Play, Pause, Share2, Download } from 'lucide-react';
 import html2canvas from 'html2canvas';
+import { getAuth } from 'firebase/auth';
+import { getDatabase, ref, update } from 'firebase/database';
 
 import elephant from '../assets/elephant.png';
 import pyramid from '../assets/pyramid.png';
 import african from '../assets/african.png';
+
+// Initialize Firebase services
+const auth = getAuth();
+const database = getDatabase();
 
 const PUZZLE_IMAGES = [
   { id: 'elephant', src: elephant, title: 'African Elephant', description: 'Majestic elephant in its natural habitat' },
@@ -138,13 +144,12 @@ const puzzlePieceShader = {
   vertexShader: `
     varying vec2 vUv;
     varying vec3 vNormal;
-    
     uniform vec2 uvOffset;
     uniform vec2 uvScale;
     
     void main() {
-      vUv = uvOffset + uv * uvScale;
-      vNormal = normalize(normalMatrix * normal);
+      vUv = uvOffset + (uv * uvScale);
+      vNormal = normalMatrix * normal;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `,
@@ -200,6 +205,8 @@ const culturalHighlightEffect = {
 };
 
 const PuzzleGame = () => {
+  // Add gameId state
+  const [gameId, setGameId] = useState(null);
   // State management
   const [image, setImage] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -247,7 +254,7 @@ const PuzzleGame = () => {
     setStartTime(Date.now());
   };
 
-  const updateGameState = async (newState) => {
+  const updateGameState = useCallback(async (newState) => {
     if (!gameId) return;
     
     try {
@@ -258,34 +265,20 @@ const PuzzleGame = () => {
     } catch (error) {
       console.error('Error updating game state:', error);
     }
-  };
+  }, [gameId]);
   
   // Then modify the togglePause function to use it
-  const togglePause = () => {
+  const togglePause = useCallback(() => {
     if (gameState === 'playing') {
       setGameState('paused');
-      setIsTimerRunning(true);
-      // if (gameId) {
-      //   updateGameState({ state: 'paused' });
-      // }
+      setIsTimerRunning(false);
+      updateGameState({ state: 'paused' });
     } else if (gameState === 'paused') {
       setGameState('playing');
-      setIsTimerRunning(false);
-      if (gameId) {
-        updateGameState({ state: 'playing' });
-      }
+      setIsTimerRunning(true);
+      updateGameState({ state: 'playing' });
     }
-  };
-
-  // const togglePause = () => {
-  //   if (gameState === 'playing') {
-  //     setGameState('paused');
-  //     setIsTimerRunning(false);
-  //   } else if (gameState === 'paused') {
-  //     setGameState('playing');
-  //     setIsTimerRunning(true);
-  //   }
-  // };
+  }, [gameState, updateGameState]);
 
   // Camera controls
   const handleZoomIn = () => {
@@ -367,74 +360,108 @@ const PuzzleGame = () => {
   const createPuzzlePieces = async (imageUrl) => {
     if (!sceneRef.current) return;
 
-    puzzlePiecesRef.current.forEach(piece => {
-      sceneRef.current.remove(piece);
-    });
-    puzzlePiecesRef.current = [];
+    setLoading(true);
+    try {
+      // Clear existing pieces
+      puzzlePiecesRef.current.forEach(piece => {
+        sceneRef.current.remove(piece);
+      });
+      puzzlePiecesRef.current = [];
 
-    setImage(imageUrl); // Add this line to set the image state
-    const texture = await new THREE.TextureLoader().loadAsync(imageUrl);
-    const aspectRatio = texture.image.width / texture.image.height;
-    
-    const gridSize = { x: 4, y: 3 };
-    const pieceSize = {
-      x: 2 * aspectRatio / gridSize.x, // Doubled from 1 to 2
-      y: 2 / gridSize.y                // Doubled from 1 to 2
-    };
-
-    setTotalPieces(gridSize.x * gridSize.y);
-    createPlacementGuides(gridSize, pieceSize);
-
-    for (let y = 0; y < gridSize.y; y++) {
-      for (let x = 0; x < gridSize.x; x++) {
-        const geometry = new THREE.PlaneGeometry(
-          pieceSize.x * 0.95,
-          pieceSize.y * 0.95,
-          32,
-          32
-        );
-
-        const material = new THREE.ShaderMaterial({
-          uniforms: {
-            map: { value: texture },
-            heightMap: { value: texture },
-            uvOffset: { value: new THREE.Vector2(x / gridSize.x, y / gridSize.y) },
-            uvScale: { value: new THREE.Vector2(1 / gridSize.x, 1 / gridSize.y) },
-            extrusionScale: { value: 0.15 },
-            selected: { value: 0.0 },
-            correctPosition: { value: 0.0 },
-            time: { value: 0.0 }
+      const texture = await new Promise((resolve, reject) => {
+        new THREE.TextureLoader().load(
+          imageUrl,
+          (tex) => {
+            tex.minFilter = THREE.LinearFilter;
+            tex.magFilter = THREE.LinearFilter;
+            resolve(tex);
           },
-          vertexShader: puzzlePieceShader.vertexShader,
-          fragmentShader: puzzlePieceShader.fragmentShader,
-          side: THREE.DoubleSide
-        });
+          undefined,
+          reject
+        );
+      });
 
-        const piece = new THREE.Mesh(geometry, material);
-        
-        piece.position.x = (x - gridSize.x / 2 + 0.5) * pieceSize.x;
-        piece.position.y = (y - gridSize.y / 2 + 0.5) * pieceSize.y;
-        piece.position.z = 0;
+      const aspectRatio = texture.image.width / texture.image.height;
+      const currentDifficulty = DIFFICULTY_SETTINGS[difficulty] || DIFFICULTY_SETTINGS.medium;
+      const gridSize = currentDifficulty.grid;
+      
+      // Calculate piece sizes maintaining aspect ratio
+      const totalWidth = 6; // Base width in world units
+      const pieceSize = {
+        x: totalWidth / gridSize.x,
+        y: (totalWidth / aspectRatio) / gridSize.y
+      };
 
-        piece.userData.originalPosition = piece.position.clone();
-        piece.userData.gridPosition = { x, y };
-        piece.userData.isPlaced = false;
+      setTotalPieces(gridSize.x * gridSize.y);
+      createPlacementGuides(gridSize, pieceSize);
 
-        sceneRef.current.add(piece);
-        puzzlePiecesRef.current.push(piece);
+      // Create puzzle pieces with proper positioning
+      for (let y = 0; y < gridSize.y; y++) {
+        for (let x = 0; x < gridSize.x; x++) {
+          const geometry = new THREE.PlaneGeometry(
+            pieceSize.x * 0.95,
+            pieceSize.y * 0.95
+          );
+
+          const material = new THREE.ShaderMaterial({
+            uniforms: {
+              map: { value: texture },
+              uvOffset: { value: new THREE.Vector2(x / gridSize.x, y / gridSize.y) },
+              uvScale: { value: new THREE.Vector2(1 / gridSize.x, 1 / gridSize.y) },
+              selected: { value: 0.0 },
+              correctPosition: { value: 0.0 },
+              time: { value: 0.0 }
+            },
+            vertexShader: puzzlePieceShader.vertexShader,
+            fragmentShader: puzzlePieceShader.fragmentShader,
+            side: THREE.DoubleSide,
+            transparent: true
+          });
+
+          const piece = new THREE.Mesh(geometry, material);
+          
+          // Calculate initial position
+          const startX = (x - (gridSize.x - 1) / 2) * pieceSize.x;
+          const startY = (y - (gridSize.y - 1) / 2) * pieceSize.y;
+          
+          piece.position.set(startX, startY, 0);
+          piece.userData.originalPosition = piece.position.clone();
+          piece.userData.gridPosition = { x, y };
+          piece.userData.isPlaced = false;
+
+          sceneRef.current.add(piece);
+          puzzlePiecesRef.current.push(piece);
+        }
       }
+
+      // Scramble pieces with better distribution
+      const scrambleRadius = Math.max(totalWidth, totalWidth / aspectRatio);
+      puzzlePiecesRef.current.forEach(piece => {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = scrambleRadius * (0.5 + Math.random() * 0.5);
+        piece.position.x += Math.cos(angle) * radius;
+        piece.position.y += Math.sin(angle) * radius;
+        piece.position.z = Math.random() * 0.5;
+        piece.rotation.z = Math.random() * Math.PI * 2;
+      });
+
+      // Adjust camera to fit puzzle
+      if (cameraRef.current) {
+        const maxDim = Math.max(totalWidth, totalWidth / aspectRatio) * 1.2;
+        cameraRef.current.position.z = maxDim;
+        cameraRef.current.updateProjectionMatrix();
+      }
+
+      setImage(imageUrl);
+      setGameState('initial');
+      setTimeElapsed(0);
+      setProgress(0);
+      setCompletedPieces(0);
+    } catch (error) {
+      console.error('Error creating puzzle pieces:', error);
+    } finally {
+      setLoading(false);
     }
-
-    setTimeElapsed(0);
-    setIsTimerRunning(true);
-
-    // Scramble pieces
-    puzzlePiecesRef.current.forEach(piece => {
-      piece.position.x += (Math.random() - 0.5) * 2;
-      piece.position.y += (Math.random() - 0.5) * 2;
-      piece.position.z += Math.random() * 0.5;
-      piece.rotation.z = (Math.random() - 0.5) * 0.5;
-    });
   };
 
   // Initialize Three.js scene
@@ -446,23 +473,33 @@ const PuzzleGame = () => {
     scene.background = new THREE.Color(0x1a1a1a);
     sceneRef.current = scene;
 
-    // Camera setup
+    // Camera setup with better initial position
     const camera = new THREE.PerspectiveCamera(
-      75,
+      60,
       containerRef.current.clientWidth / containerRef.current.clientHeight,
       0.1,
       1000
     );
-    camera.position.z = 5;
+    camera.position.z = 8;
     cameraRef.current = camera;
 
-    // Renderer setup
+    // Enhanced lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(5, 5, 7);
+    scene.add(directionalLight);
+
+    // Improved renderer settings
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
-      alpha: true
+      alpha: true,
+      powerPreference: "high-performance"
     });
     renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputEncoding = THREE.sRGBEncoding;
     containerRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
@@ -484,14 +521,6 @@ const PuzzleGame = () => {
     controls.maxDistance = 10;
     controls.minDistance = 2;
     controlsRef.current = controls;
-
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-    scene.add(ambientLight);
-
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(5, 5, 5);
-    scene.add(directionalLight);
 
     // Particle system
     particleSystemRef.current = new ParticleSystem(scene);
@@ -520,8 +549,23 @@ const PuzzleGame = () => {
     };
     animate();
 
-    // Cleanup
+    // Handle window resize
+    const handleResize = () => {
+      if (!containerRef.current || !cameraRef.current || !rendererRef.current) return;
+      
+      const width = containerRef.current.clientWidth;
+      const height = containerRef.current.clientHeight;
+      
+      cameraRef.current.aspect = width / height;
+      cameraRef.current.updateProjectionMatrix();
+      
+      rendererRef.current.setSize(width, height);
+      composerRef.current?.setSize(width, height);
+    };
+
+    window.addEventListener('resize', handleResize);
     return () => {
+      window.removeEventListener('resize', handleResize);
       renderer.dispose();
       containerRef.current?.removeChild(renderer.domElement);
     };
@@ -587,12 +631,14 @@ const PuzzleGame = () => {
       }
     };
 
-    const handleMouseMove = (event) => {
-      if (!isDragging || !selectedPieceRef.current) return;
+    const handleMouseMove = useCallback((event) => {
+      if (!isDragging || !selectedPieceRef.current || !rendererRef.current) return;
 
       const rect = rendererRef.current.domElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      const mouse = new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      );
 
       raycaster.setFromCamera(mouse, cameraRef.current);
       const intersectPoint = new THREE.Vector3();
@@ -600,16 +646,18 @@ const PuzzleGame = () => {
       
       selectedPieceRef.current.position.copy(intersectPoint);
       
+      // Snap to position with better threshold
       const originalPos = selectedPieceRef.current.userData.originalPosition;
       const distance = originalPos.distanceTo(selectedPieceRef.current.position);
+      const snapThreshold = DIFFICULTY_SETTINGS[difficulty]?.snapDistance || 0.3;
       
-      if (distance < 0.3) {
+      if (distance < snapThreshold) {
         selectedPieceRef.current.material.uniforms.correctPosition.value = 
-          1.0 - (distance / 0.3);
+          1.0 - (distance / snapThreshold);
       } else {
         selectedPieceRef.current.material.uniforms.correctPosition.value = 0.0;
       }
-    };
+    }, [isDragging, difficulty]);
 
     const handleMouseUp = () => {
       if (!selectedPieceRef.current) return;
@@ -655,7 +703,7 @@ const PuzzleGame = () => {
       element.removeEventListener('mouseup', handleMouseUp);
       element.removeEventListener('mouseleave', handleMouseUp);
     };
-  }, [totalPieces]);
+  }, [totalPieces, handleMouseMove]);
 
   // Handle image upload
   const handleImageUpload = (event) => {
@@ -783,9 +831,42 @@ const PuzzleGame = () => {
     }, 2000);
   };
 
+  // Add game completion handler
+  const handlePuzzleCompletion = async (completionData) => {
+    if (!auth.currentUser) return;
+
+    try {
+      const newGameId = `game_${Date.now()}`;
+      setGameId(newGameId);
+
+      await update(ref(database, `games/${newGameId}`), {
+        ...completionData,
+        completedAt: Date.now(),
+        achievements: calculateAchievements(completionData)
+      });
+    } catch (error) {
+      console.error('Error saving game completion:', error);
+    }
+  };
+
+  // Add achievement calculator
+  const calculateAchievements = (data) => {
+    const earned = [];
+    
+    if (data.timer < 120) { // 2 minutes
+      earned.push('speed_demon');
+    }
+    if (data.difficulty === 'expert') {
+      earned.push('persistent');
+    }
+    // Add more achievement checks as needed
+    
+    return earned;
+  };
+
   // Add completion handler
   useEffect(() => {
-    if (progress === 100) {
+    if (progress === 100 && auth.currentUser) {
       const selectedPuzzle = PUZZLE_IMAGES.find(img => img.src === selectedImage);
       handlePuzzleCompletion({
         puzzleId: `cultural_${selectedPuzzle?.id || Date.now()}`,
@@ -797,7 +878,7 @@ const PuzzleGame = () => {
         timer: timeElapsed
       });
     }
-  }, [progress]);
+  }, [progress, auth.currentUser, selectedImage, startTime, difficulty, timeElapsed]);
 
   return (
     <div className="w-full h-screen flex flex-col bg-gray-900">
