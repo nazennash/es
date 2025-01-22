@@ -8,6 +8,8 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, Play, Pause, Share2, Download } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { auth } from '../firebase';
+import { getFirestore, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { ref, update, getDatabase } from 'firebase/database';
 
 // 2. Constants
 const DIFFICULTY_SETTINGS = {
@@ -175,7 +177,7 @@ const puzzlePieceShader = {
 };
 
 // 5. Helper functions (used within component)
-const handlePieceSnap = (piece) => {
+const handlePieceSnap = (piece, particleSystem) => {
   const originalPos = piece.userData.originalPosition;
   const duration = 0.3;
   const startPos = piece.position.clone();
@@ -191,51 +193,16 @@ const handlePieceSnap = (piece) => {
       requestAnimationFrame(animate);
     } else {
       piece.position.copy(originalPos);
-      particleSystemRef.current.emit(piece.position, 30);
+      if (particleSystem) {
+        particleSystem.emit(piece.position, 30);
+      }
     }
   };
   
   animate();
 };
 
-const handlePieceComplete = (piece) => {
-  // Existing celebration effect
-  particleSystemRef.current.emit(piece.position, 30);
-  
-  // Add a ripple effect
-  const ripple = new THREE.Mesh(
-    new THREE.CircleGeometry(0.1, 32),
-    new THREE.MeshBasicMaterial({
-      color: 0x4a90e2,
-      transparent: true,
-      opacity: 0.5
-    })
-  );
-  ripple.position.copy(piece.position);
-  ripple.position.z = 0.01;
-  sceneRef.current.add(ripple);
 
-  // Animate ripple
-  const startScale = 1;
-  const endScale = 2;
-  const duration = 1000;
-  const start = Date.now();
-
-  const animateRipple = () => {
-    const elapsed = Date.now() - start;
-    const progress = elapsed / duration;
-
-    if (progress < 1) {
-      const scale = startScale + (endScale - startScale) * progress;
-      ripple.scale.set(scale, scale, 1);
-      ripple.material.opacity = 0.5 * (1 - progress);
-      requestAnimationFrame(animateRipple);
-    } else {
-      sceneRef.current.remove(ripple);
-    }
-  };
-  animateRipple();
-};
 
 // 6. Main Component
 const PuzzleGame = () => {
@@ -253,6 +220,7 @@ const PuzzleGame = () => {
   const [startTime, setStartTime] = useState(null);
   const [difficulty, setDifficulty] = useState(4); // default difficulty
   const [gameId, setGameId] = useState(null);
+  const [completedAchievements, setCompletedAchievements] = useState([]);
 
   // Refs
   const containerRef = useRef(null);
@@ -268,6 +236,7 @@ const PuzzleGame = () => {
   const timerRef = useRef(null);
   const guideOutlinesRef = useRef([]);
   const puzzleContainerRef = useRef(null);
+  const soundRef = useRef(null);
 
   const defaultCameraPosition = { x: 0, y: 0, z: 5 };
   const defaultControlsTarget = new THREE.Vector3(0, 0, 0);
@@ -280,6 +249,10 @@ const PuzzleGame = () => {
   };
 
   const startGame = () => {
+    if (!image) {
+      alert('Please upload an image first');
+      return;
+    }
     setGameState('playing');
     setIsTimerRunning(true);
     setStartTime(Date.now());
@@ -682,7 +655,7 @@ const PuzzleGame = () => {
 
       if (distance < 0.3) {
         // Snap to position
-        handlePieceSnap(selectedPieceRef.current);
+        handlePieceSnap(selectedPieceRef.current, particleSystemRef.current);
         
         if (!selectedPieceRef.current.userData.isPlaced) {
           selectedPieceRef.current.userData.isPlaced = true;
@@ -733,16 +706,22 @@ const PuzzleGame = () => {
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
     if (!file) return;
-
+  
     setLoading(true);
     const reader = new FileReader();
     reader.onload = (e) => {
       setImage(e.target.result);
       createPuzzlePieces(e.target.result).then(() => {
         setLoading(false);
+        setGameState('initial'); // Reset to initial state
         setIsTimerRunning(false);
         setCompletedPieces(0);
         setProgress(0);
+        setTimeElapsed(0);
+        // Reset any existing timer
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+        }
       });
     };
     reader.readAsDataURL(file);
@@ -830,19 +809,19 @@ const PuzzleGame = () => {
   );
 
   // Add this function inside the component
-  const handlePuzzleCompletion = async (puzzleData) => {
-    if (!auth.currentUser) return;
+  // const handlePuzzleCompletion = async (puzzleData) => {
+  //   if (!auth.currentUser) return;
     
-    try {
-      const db = getFirestore();
-      await addDoc(collection(db, 'completed_puzzles'), {
-        ...puzzleData,
-        completedAt: serverTimestamp()
-      });
-    } catch (error) {
-      console.error('Error saving puzzle completion:', error);
-    }
-  };
+  //   try {
+  //     const db = getFirestore();
+  //     await addDoc(collection(db, 'completed_puzzles'), {
+  //       ...puzzleData,
+  //       completedAt: serverTimestamp()
+  //     });
+  //   } catch (error) {
+  //     console.error('Error saving puzzle completion:', error);
+  //   }
+  // };
 
   // Modify the completion effect
   useEffect(() => {
@@ -858,6 +837,149 @@ const PuzzleGame = () => {
       });
     }
   }, [progress, startTime, difficulty, image, timeElapsed]);
+
+  // Add sound initialization
+  useEffect(() => {
+    const soundSystem = new SoundSystem();
+    soundSystem.initialize();
+    
+    // Store in ref for access in component
+    soundRef.current = soundSystem;
+    
+    return () => {
+      // Cleanup sound system
+      if (soundRef.current) {
+        soundRef.current.context.close();
+      }
+    };
+  }, []);
+
+  // Add mouse interaction handling
+  const setupMouseInteraction = () => {
+    if (!rendererRef.current || !sceneRef.current || !cameraRef.current) return;
+  
+    const handlePieceInteraction = (event, piece) => {
+      if (!piece || piece.userData.isPlaced) return;
+      
+      // Update piece visual feedback
+      if (piece.material.uniforms) {
+        piece.material.uniforms.selected.value = 1.0;
+      }
+      
+      // Play sound effect
+      soundRef.current?.play('pickup');
+    };
+  
+    // ... rest of mouse handling code ...
+  };
+
+  // Add achievement handling
+  const checkAchievements = () => {
+    const achievements = [];
+    
+    // Speed Demon achievement
+    if (timeElapsed < 120) {
+      achievements.push(ACHIEVEMENTS.find(a => a.id === 'speed_demon'));
+    }
+    
+    // Perfectionist achievement
+    if (!puzzlePiecesRef.current.some(p => p.userData.misplaced)) {
+      achievements.push(ACHIEVEMENTS.find(a => a.id === 'perfectionist'));
+    }
+    
+    // Persistent achievement
+    if (difficulty === 'expert') {
+      achievements.push(ACHIEVEMENTS.find(a => a.id === 'persistent'));
+    }
+    
+    return achievements;
+  };
+
+  // Modify puzzle completion handler
+  const handlePuzzleCompletion = async () => {
+    if (!auth.currentUser) return;
+    
+    const achievements = checkAchievements();
+    const db = getFirestore();
+    
+    try {
+      await addDoc(collection(db, 'completed_puzzles'), {
+        userId: auth.currentUser.uid,
+        puzzleId: gameId,
+        timeElapsed,
+        difficulty,
+        completedAt: serverTimestamp(),
+        achievements: achievements.map(a => a.id)
+      });
+      
+      // Play completion sound
+      soundRef.current?.play('complete');
+      
+      // Show achievements
+      setCompletedAchievements(achievements);
+      
+    } catch (error) {
+      console.error('Error saving completion:', error);
+    }
+  };
+
+  // Add game state management
+  const initializeGameState = async () => {
+    if (!auth.currentUser) return;
+    
+    const db = getDatabase();
+    const gameRef = ref(db, `games/${gameId}`);
+    
+    try {
+      await update(gameRef, {
+        createdAt: serverTimestamp(),
+        userId: auth.currentUser.uid,
+        difficulty,
+        state: 'initial'
+      });
+    } catch (error) {
+      console.error('Error initializing game:', error);
+    }
+  };
+
+  const handlePieceComplete = (piece) => {
+  if (!piece) return;
+  
+  // Visual effects
+  particleSystemRef.current?.emit(piece.position, 30);
+  
+  // Sound effect
+  soundRef.current?.play('place');
+  
+  // Add ripple effect
+  const ripple = new THREE.Mesh(
+    new THREE.CircleGeometry(0.1, 32),
+    new THREE.MeshBasicMaterial({
+      color: 0x4a90e2,
+      transparent: true,
+      opacity: 0.5
+    })
+  );
+  
+  ripple.position.copy(piece.position);
+  ripple.position.z = 0.01;
+  sceneRef.current.add(ripple);
+
+  // Animate ripple
+  const animate = () => {
+    const scale = ripple.scale.x + 0.05;
+    ripple.scale.set(scale, scale, 1);
+    ripple.material.opacity -= 0.02;
+    
+    if (ripple.material.opacity > 0) {
+      requestAnimationFrame(animate);
+    } else {
+      sceneRef.current.remove(ripple);
+    }
+  };
+  
+  animate();
+};
 
   return (
     <div className="w-full h-screen flex flex-col bg-gray-900">
