@@ -10,6 +10,8 @@ import html2canvas from 'html2canvas';
 import { auth } from '../firebase';
 import { getFirestore, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, update, getDatabase } from 'firebase/database';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Tooltip } from 'react-tooltip';
 
 // 2. Constants
 const DIFFICULTY_SETTINGS = {
@@ -1098,169 +1100,252 @@ const PuzzleGame = () => {
   };
 
   return (
-    <div className="w-full h-screen flex flex-col bg-gray-900">
-      {/* Header with controls */}
-      <div className="p-4 bg-gray-800 flex items-center justify-between">
+    <div className="w-full h-screen flex flex-col bg-gradient-to-b from-gray-900 to-gray-800">
+      {/* Header with controls - Enhanced UI */}
+      <motion.div 
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="p-4 bg-gray-800/90 backdrop-blur-sm border-b border-gray-700 flex items-center justify-between shadow-lg"
+      >
         <div className="flex items-center gap-4">
-          <label className="relative cursor-pointer">
+          {/* Upload Button */}
+          <label 
+            className="relative cursor-pointer group"
+            data-tooltip-id="upload-tooltip"
+            data-tooltip-content="Upload a new image to create puzzle"
+          >
             <input
               type="file"
               accept="image/*"
               onChange={handleImageUpload}
               className="hidden"
             />
-            <div className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 
-                          rounded-lg text-white transition-colors">
+            <motion.div 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 group-hover:bg-blue-700 
+                        rounded-lg text-white transition-all duration-200 shadow-lg"
+            >
               <Camera className="w-5 h-5" />
-              <span>Upload Photo</span>
-            </div>
+              <span className="font-medium">Upload Photo</span>
+            </motion.div>
           </label>
 
-          {/* Play/Pause controls */}
-          <div className="flex items-center gap-2">
+          {/* Game Controls */}
+          <div className="flex items-center gap-3">
             {gameState !== 'initial' && (
-              <button
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={togglePause}
-                className="p-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
+                className="p-2.5 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors shadow-md"
+                data-tooltip-id="control-tooltip"
+                data-tooltip-content={gameState === 'playing' ? 'Pause Game' : 'Resume Game'}
               >
                 {gameState === 'playing' ? (
                   <Pause className="w-5 h-5" />
                 ) : (
                   <Play className="w-5 h-5" />
                 )}
-              </button>
+              </motion.button>
             )}
             
             {gameState === 'initial' && (
-              <button
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={startGame}
-                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                className="p-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-md"
+                data-tooltip-id="start-tooltip"
+                data-tooltip-content="Start Game"
               >
                 <Play className="w-5 h-5" />
-              </button>
+              </motion.button>
             )}
-          </div>
 
-          {/* Timer display */}
-          <div className="flex items-center gap-2 text-white bg-gray-700 px-3 py-1 rounded-lg">
-            <Clock className="w-4 h-4" />
-            <span>{formatTime(timeElapsed)}</span>
+            {/* Timer Display */}
+            <div className="flex items-center gap-2 text-white bg-gray-700/80 px-4 py-2 rounded-lg shadow-md">
+              <Clock className="w-4 h-4 text-blue-400" />
+              <span className="font-mono text-lg">{formatTime(timeElapsed)}</span>
+            </div>
           </div>
-
-          <button className="p-2 text-gray-300 hover:text-white">
-            <Info className="w-5 h-5" />
-          </button>
         </div>
 
-        {/* Progress indicator */}
+        {/* Progress Indicator */}
         {totalPieces > 0 && (
-          <div className="flex items-center gap-4">
+          <motion.div 
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="flex items-center gap-4"
+          >
             <div className="flex flex-col items-end">
               <div className="text-sm text-gray-400">Progress</div>
               <div className="text-lg font-bold text-white">
-                {completedPieces} / {totalPieces} pieces
+                {completedPieces} / {totalPieces}
               </div>
             </div>
-            <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-blue-500 to-green-500 
-                          transition-all duration-500 ease-out relative"
-                style={{ width: `${progress}%` }}
+            <div className="w-40 h-3 bg-gray-700 rounded-full overflow-hidden shadow-inner">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${progress}%` }}
+                transition={{ duration: 0.5 }}
+                className="h-full bg-gradient-to-r from-blue-500 to-green-500 relative"
               >
-                <div 
-                  className="absolute inset-0 bg-white opacity-20 
-                            animate-pulse"
-                />
-              </div>
+                <div className="absolute inset-0 bg-white opacity-20 animate-pulse" />
+              </motion.div>
             </div>
-            {progress === 100 && (
-              <div className="flex items-center gap-2 text-green-400">
-                <Check className="w-5 h-5" />
-                <span>Complete! - {formatTime(timeElapsed)}</span>
-              </div>
-            )}
-          </div>
+            <AnimatePresence>
+              {progress === 100 && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  className="flex items-center gap-2 text-green-400 bg-green-900/30 px-4 py-2 rounded-lg"
+                >
+                  <Check className="w-5 h-5" />
+                  <span className="font-medium">Complete!</span>
+                  <span className="text-green-300 font-mono">{formatTime(timeElapsed)}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
         )}
-        <div className="flex items-center gap-2">
-          {/* ...existing controls... */}
-          
-          {progress === 100 && (
-            <button
-              onClick={() => setShowShareModal(true)}
-              className="p-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
-              title="Share Achievement"
-            >
-              <Share2 className="w-5 h-5" />
-            </button>
-          )}
-        </div>
-      </div>
+      </motion.div>
 
       {/* Main puzzle area */}
       <div ref={puzzleContainerRef} className="flex-1 relative">
         <div ref={containerRef} className="w-full h-full" />
 
-        {/* Camera controls overlay */}
-        <div className="absolute right-4 top-4 flex flex-col gap-2">
-          <button
-            onClick={handleZoomIn}
-            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            title="Zoom In"
-          >
-            <ZoomIn className="w-5 h-5" />
-          </button>
-          <button
-            onClick={handleZoomOut}
-            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            title="Zoom Out"
-          >
-            <ZoomOut className="w-5 h-5" />
-          </button>
-          <button
-            onClick={handleResetView}
-            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            title="Reset View"
-          >
-            <Maximize2 className="w-5 h-5" />
-          </button>
-          <button
-            onClick={handleResetGame}
-            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            title="Reset Puzzle"
-          >
-            <RotateCcw className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => setShowThumbnail(!showThumbnail)}
-            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            title="Toggle Reference Image"
-          >
-            <Image className="w-5 h-5" />
-          </button>
-        </div>
+        {/* Camera controls overlay - Enhanced */}
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="absolute right-4 top-4 flex flex-col gap-2"
+        >
+          {[
+            { icon: <ZoomIn className="w-5 h-5" />, action: handleZoomIn, tooltip: "Zoom In" },
+            { icon: <ZoomOut className="w-5 h-5" />, action: handleZoomOut, tooltip: "Zoom Out" },
+            { icon: <Maximize2 className="w-5 h-5" />, action: handleResetView, tooltip: "Reset View" },
+            { icon: <RotateCcw className="w-5 h-5" />, action: handleResetGame, tooltip: "Reset Puzzle" },
+            { icon: <Image className="w-5 h-5" />, action: () => setShowThumbnail(!showThumbnail), tooltip: "Toggle Reference" }
+          ].map((control, index) => (
+            <motion.button
+              key={index}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={control.action}
+              className="p-2.5 bg-gray-800/90 backdrop-blur-sm text-white rounded-lg 
+                       hover:bg-gray-700 transition-colors shadow-lg"
+              data-tooltip-id="control-tooltip"
+              data-tooltip-content={control.tooltip}
+            >
+              {control.icon}
+            </motion.button>
+          ))}
+        </motion.div>
 
-        {/* Loading overlay */}
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center 
-                        bg-gray-900 bg-opacity-75 z-10">
-            <div className="text-xl text-white">Loading puzzle...</div>
-          </div>
-        )}
+        {/* Reference Image Overlay - Enhanced */}
+        <AnimatePresence>
+          {showThumbnail && image && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="absolute left-4 top-4 p-2 bg-gray-800/90 backdrop-blur-sm rounded-lg shadow-lg"
+            >
+              <div className="relative group">
+                <img
+                  src={image}
+                  alt="Reference"
+                  className="w-48 h-auto rounded border border-gray-600 transition-transform 
+                           group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent 
+                              opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span className="absolute bottom-2 left-2 text-white text-sm">Reference Image</span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* Thumbnail overlay */}
-        {showThumbnail && image && (
-          <div className="absolute left-4 top-4 p-2 bg-gray-800 rounded-lg shadow-lg">
-            <div className="relative">
-              <img
-                src={image}
-                alt="Reference"
-                className="w-48 h-auto rounded border border-gray-600"
-              />
-            </div>
-          </div>
-        )}
+        {/* Loading Overlay - Enhanced */}
+        <AnimatePresence>
+          {loading && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 flex items-center justify-center 
+                        bg-gray-900/75 backdrop-blur-sm z-10"
+            >
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent 
+                              rounded-full animate-spin" />
+                <div className="text-xl text-white font-medium">Loading puzzle...</div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-      {showShareModal && <ShareModal />}
+
+      {/* Tooltips */}
+      <Tooltip id="upload-tooltip" />
+      <Tooltip id="control-tooltip" />
+      <Tooltip id="start-tooltip" />
+
+      {/* Share Modal - Enhanced */}
+      <AnimatePresence>
+        {showShareModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-gray-800 p-6 rounded-xl shadow-xl max-w-md w-full mx-4"
+            >
+              <h3 className="text-xl font-bold mb-4 text-white">Share Your Achievement</h3>
+              <div className="space-y-4">
+                <button
+                  onClick={shareToFacebook}
+                  className="w-full p-3 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                >
+                  Share on Facebook
+                </button>
+                <button
+                  onClick={shareToTwitter}
+                  className="w-full p-3 bg-sky-400 text-white rounded hover:bg-sky-500 transition-colors"
+                >
+                  Share on Twitter
+                </button>
+                <button
+                  onClick={shareToWhatsApp}
+                  className="w-full p-3 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+                >
+                  Share on WhatsApp
+                </button>
+                <button
+                  onClick={downloadPuzzleImage}
+                  className="w-full p-3 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Download className="h-4 w-4" /> Download Image
+                </button>
+              </div>
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="mt-4 w-full p-2 border border-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+              >
+                Close
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
