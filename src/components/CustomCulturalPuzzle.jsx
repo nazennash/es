@@ -177,6 +177,28 @@ const puzzlePieceShader = {
   `
 };
 
+// Add cultural highlight effect
+const culturalHighlightEffect = {
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform float time;
+    uniform vec3 culturalColor;
+    varying vec2 vUv;
+    
+    void main() {
+      float pattern = sin(vUv.x * 10.0 + time) * sin(vUv.y * 10.0 + time) * 0.5 + 0.5;
+      vec3 color = culturalColor * pattern;
+      gl_FragColor = vec4(color, pattern * 0.3);
+    }
+  `
+};
+
 const PuzzleGame = () => {
   // State management
   const [image, setImage] = useState(null);
@@ -606,6 +628,7 @@ const PuzzleGame = () => {
           });
 
           particleSystemRef.current.emit(selectedPieceRef.current.position, 30);
+          handlePieceComplete(selectedPieceRef.current);
         }
       }
 
@@ -731,6 +754,32 @@ const PuzzleGame = () => {
       </div>
     </div>
   );
+
+  // Add it to piece completion
+  const handlePieceComplete = (piece) => {
+    const highlightMesh = new THREE.Mesh(
+      piece.geometry.clone(),
+      new THREE.ShaderMaterial({
+        vertexShader: culturalHighlightEffect.vertexShader,
+        fragmentShader: culturalHighlightEffect.fragmentShader,
+        uniforms: {
+          time: { value: 0 },
+          culturalColor: { value: new THREE.Color(0.8, 0.6, 0.2) }
+        },
+        transparent: true,
+        blending: THREE.AdditiveBlending
+      })
+    );
+    
+    highlightMesh.position.copy(piece.position);
+    highlightMesh.position.z += 0.01;
+    sceneRef.current.add(highlightMesh);
+    
+    // Animate and remove after 2 seconds
+    setTimeout(() => {
+      sceneRef.current.remove(highlightMesh);
+    }, 2000);
+  };
 
   return (
     <div className="w-full h-screen flex flex-col bg-gray-900">

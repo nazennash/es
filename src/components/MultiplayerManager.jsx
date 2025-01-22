@@ -89,15 +89,21 @@ class ParticleSystem {
   }
   
   emit(position, count = 20) {
+    // Increase particle count and add color variation
     for (let i = 0; i < count; i++) {
       this.particles.push({
         position: position.clone(),
         velocity: new THREE.Vector3(
-          (Math.random() - 0.5) * 0.2,
-          (Math.random() - 0.5) * 0.2,
-          Math.random() * 0.2
+          (Math.random() - 0.5) * 0.3, // Increased spread
+          (Math.random() - 0.5) * 0.3,
+          Math.random() * 0.3
         ),
-        life: 1.0
+        life: 1.0,
+        color: new THREE.Color(
+          0.5 + Math.random() * 0.5,
+          0.8 + Math.random() * 0.2,
+          0.5 + Math.random() * 0.5
+        )
       });
     }
     this.updateGeometry();
@@ -201,6 +207,8 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
   const [showThumbnail, setShowThumbnail] = useState(false);
   const [inviteLink, setInviteLink] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
+  const [cursors, setCursors] = useState({});
+  const [lockedPieces, setLockedPieces] = useState({});
 
   // Refs
   const containerRef = useRef(null);
@@ -567,7 +575,7 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
     let dragPlane = new THREE.Plane();
     let dragOffset = new THREE.Vector3();
     
-    const handleMouseDown = (event) => {
+    const handleMouseDown = async (event) => {
       event.preventDefault();
       
       const rect = rendererRef.current.domElement.getBoundingClientRect();
@@ -579,11 +587,16 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
 
       if (intersects.length > 0) {
         const piece = intersects[0].object;
-        
-        // Don't allow dragging if piece is already correctly placed
-        if (piece.userData.isPlaced) {
+        const pieceId = piece.userData.id;
+
+        // Check if piece is locked by another user
+        if (lockedPieces[pieceId] && lockedPieces[pieceId].userId !== currentUser.uid) {
           return;
         }
+
+        // Try to lock the piece
+        const locked = await lockPiece(pieceId);
+        if (!locked) return;
 
         isDragging = true;
         selectedPieceRef.current = piece;
@@ -623,9 +636,15 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
       
       // Sync piece movement with other players
       syncPieceMovement(selectedPieceRef.current);
+      
+      // Update cursor position in Firebase
+      updateCursorPosition({
+        x: mouse.x,
+        y: mouse.y
+      });
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = async () => {
       if (!selectedPieceRef.current) return;
 
       isDragging = false;
@@ -658,6 +677,9 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
           selectedPieceRef.current.userData.isPlaced ? 1.0 : 0.0;
       }
       
+      const pieceId = selectedPieceRef.current.userData.id;
+      await unlockPiece(pieceId);
+      
       selectedPieceRef.current = null;
       controlsRef.current.enabled = true;
     };
@@ -674,7 +696,7 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
       element.removeEventListener('mouseup', handleMouseUp);
       element.removeEventListener('mouseleave', handleMouseUp);
     };
-  }, [totalPieces]);
+  }, [totalPieces, lockedPieces, currentUser]);
 
   // Handle image upload
   const handleImageUpload = (event) => {
@@ -965,6 +987,58 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
     </div>
   );
 
+  // Add cursor effect
+  useEffect(() => {
+    if (!gameId) return;
+
+    const cursorsRef = ref(database, `games/${gameId}/cursors`);
+    const unsubscribe = onValue(cursorsRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      setCursors(data);
+    });
+
+    return () => unsubscribe();
+  }, [gameId]);
+
+  // Add cursor rendering
+  useEffect(() => {
+    if (!sceneRef.current) return;
+
+    // Create cursor meshes
+    Object.entries(cursors).forEach(([userId, data]) => {
+      if (userId === currentUser.uid) return;
+
+      let cursorMesh = sceneRef.current.getObjectByName(`cursor-${userId}`);
+      if (!cursorMesh) {
+        const geometry = new THREE.CircleGeometry(0.05, 32);
+        const material = new THREE.MeshBasicMaterial({ 
+          color: 0x00ff00,
+          transparent: true,
+          opacity: 0.5 
+        });
+        cursorMesh = new THREE.Mesh(geometry, material);
+        cursorMesh.name = `cursor-${userId}`;
+        sceneRef.current.add(cursorMesh);
+      }
+
+      // Update cursor position
+      cursorMesh.position.set(data.position.x, data.position.y, 1);
+    });
+  }, [cursors, currentUser]);
+
+  // Add completion celebration effect
+  useEffect(() => {
+    if (progress === 100) {
+      // Create celebratory particle burst
+      const center = new THREE.Vector3(0, 0, 0);
+      for (let i = 0; i < 8; i++) {
+        setTimeout(() => {
+          particleSystemRef.current.emit(center, 50);
+        }, i * 100);
+      }
+    }
+  }, [progress]);
+
   return (
     <div className="w-full h-screen flex flex-col bg-gray-900">
       {/* Add player list */}
@@ -1066,9 +1140,11 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
             </div>
             <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden">
               <div
-                className="h-full bg-blue-500 transition-all duration-300"
+                className="h-full bg-gradient-to-r from-blue-500 to-green-500 transition-all duration-500 ease-out"
                 style={{ width: `${progress}%` }}
-              />
+              >
+                <div className="absolute inset-0 bg-white opacity-20 animate-pulse"></div>
+              </div>
             </div>
             {progress === 100 && (
               <div className="flex items-center gap-2 text-green-400">

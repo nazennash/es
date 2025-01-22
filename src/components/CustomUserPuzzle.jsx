@@ -147,6 +147,12 @@ const puzzlePieceShader = {
     varying vec2 vUv;
     varying vec3 vNormal;
     
+    // Add hover glow effect
+    vec3 addHoverGlow(vec3 color, float hover) {
+      vec3 glowColor = vec3(0.4, 0.6, 1.0);
+      return mix(color, glowColor, hover * 0.3);
+    }
+    
     void main() {
       vec4 texColor = texture2D(map, vUv);
       vec3 normal = normalize(vNormal);
@@ -162,6 +168,7 @@ const puzzlePieceShader = {
       vec3 finalColor = texColor.rgb * (vec3(0.3) + vec3(0.7) * diff);
       finalColor += highlightColor * highlightStrength + correctColor * correctStrength;
       
+      finalColor = addHoverGlow(finalColor, selected);
       gl_FragColor = vec4(finalColor, texColor.a);
     }
   `
@@ -582,8 +589,7 @@ const PuzzleGame = () => {
       const distance = originalPos.distanceTo(selectedPieceRef.current.position);
 
       if (distance < 0.3) {
-        selectedPieceRef.current.position.copy(originalPos);
-        selectedPieceRef.current.rotation.z = 0;
+        handlePieceSnap(selectedPieceRef.current);
         
         if (!selectedPieceRef.current.userData.isPlaced) {
           selectedPieceRef.current.userData.isPlaced = true;
@@ -593,7 +599,7 @@ const PuzzleGame = () => {
             return newCount;
           });
 
-          particleSystemRef.current.emit(selectedPieceRef.current.position, 30);
+          handlePieceComplete(selectedPieceRef.current);
         }
       }
 
@@ -786,9 +792,15 @@ const PuzzleGame = () => {
             </div>
             <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden">
               <div
-                className="h-full bg-blue-500 transition-all duration-300"
+                className="h-full bg-gradient-to-r from-blue-500 to-green-500 
+                          transition-all duration-500 ease-out relative"
                 style={{ width: `${progress}%` }}
-              />
+              >
+                <div 
+                  className="absolute inset-0 bg-white opacity-20 
+                            animate-pulse"
+                />
+              </div>
             </div>
             {progress === 100 && (
               <div className="flex items-center gap-2 text-green-400">
@@ -883,3 +895,67 @@ const PuzzleGame = () => {
 };
 
 export default PuzzleGame;
+
+// Add snapping animation
+const handlePieceSnap = (piece) => {
+  const originalPos = piece.userData.originalPosition;
+  const duration = 0.3;
+  const startPos = piece.position.clone();
+  const startTime = Date.now();
+  
+  const animate = () => {
+    const progress = Math.min((Date.now() - startTime) / (duration * 1000), 1);
+    const easeProgress = 1 - Math.pow(1 - progress, 3); // Cubic ease-out
+    
+    piece.position.lerpVectors(startPos, originalPos, easeProgress);
+    
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      piece.position.copy(originalPos);
+      particleSystemRef.current.emit(piece.position, 30);
+    }
+  };
+  
+  animate();
+};
+
+// Enhance the particle effect for piece placement
+const handlePieceComplete = (piece) => {
+  // Existing celebration effect
+  particleSystemRef.current.emit(piece.position, 30);
+  
+  // Add a ripple effect
+  const ripple = new THREE.Mesh(
+    new THREE.CircleGeometry(0.1, 32),
+    new THREE.MeshBasicMaterial({
+      color: 0x4a90e2,
+      transparent: true,
+      opacity: 0.5
+    })
+  );
+  ripple.position.copy(piece.position);
+  ripple.position.z = 0.01;
+  sceneRef.current.add(ripple);
+
+  // Animate ripple
+  const startScale = 1;
+  const endScale = 2;
+  const duration = 1000;
+  const start = Date.now();
+
+  const animateRipple = () => {
+    const elapsed = Date.now() - start;
+    const progress = elapsed / duration;
+
+    if (progress < 1) {
+      const scale = startScale + (endScale - startScale) * progress;
+      ripple.scale.set(scale, scale, 1);
+      ripple.material.opacity = 0.5 * (1 - progress);
+      requestAnimationFrame(animateRipple);
+    } else {
+      sceneRef.current.remove(ripple);
+    }
+  };
+  animateRipple();
+};

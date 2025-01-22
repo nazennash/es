@@ -145,6 +145,43 @@ export const useMultiplayerGame = (gameId) => {
       }
     };
 
+  const lockPiece = async (pieceId) => {
+    if (!gameId || !currentUser) return false;
+    try {
+      const pieceRef = ref(database, `games/${gameId}/puzzle/pieces/${pieceId}/lockedBy`);
+      const result = await set(pieceRef, {
+        userId: currentUser.uid,
+        timestamp: Date.now()
+      });
+      return true;
+    } catch (error) {
+      setError(error.message);
+      return false;
+    }
+  };
+
+  const unlockPiece = async (pieceId) => {
+    if (!gameId || !currentUser) return;
+    try {
+      const pieceRef = ref(database, `games/${gameId}/puzzle/pieces/${pieceId}/lockedBy`);
+      await remove(pieceRef);
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+
+  const updateCursorPosition = async (position) => {
+    if (!gameId || !currentUser) return;
+    try {
+      await update(ref(database, `games/${gameId}/cursors/${currentUser.uid}`), {
+        position,
+        timestamp: Date.now()
+      });
+    } catch (error) {
+      setError(error.message);
+    }
+  };
+
   return {
     players,
     gameState,
@@ -154,6 +191,9 @@ export const useMultiplayerGame = (gameId) => {
     syncPieceState,
     syncImageState,
     syncPuzzleState,
-    syncPieceMovement
+    syncPieceMovement,
+    lockPiece,
+    unlockPiece,
+    updateCursorPosition
   };
 };
