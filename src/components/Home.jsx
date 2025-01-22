@@ -13,6 +13,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import { nanoid } from 'nanoid';
+import QuickAccess from './QuickAccess';
 
 const Home = ({ user }) => {
   const navigate = useNavigate();

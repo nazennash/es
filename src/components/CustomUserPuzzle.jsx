@@ -1,3 +1,4 @@
+// 1. Imports
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
@@ -6,9 +7,9 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
 import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, Play, Pause, Share2, Download } from 'lucide-react';
 import html2canvas from 'html2canvas';
-import { auth } from '../firebase-config'; // Add this import if not already present
+import { auth } from '../firebase';
 
-// Difficulty presets
+// 2. Constants
 const DIFFICULTY_SETTINGS = {
   easy: { grid: { x: 3, y: 2 }, snapDistance: 0.4, rotationEnabled: false },
   medium: { grid: { x: 4, y: 3 }, snapDistance: 0.3, rotationEnabled: true },
@@ -16,14 +17,13 @@ const DIFFICULTY_SETTINGS = {
   expert: { grid: { x: 6, y: 5 }, snapDistance: 0.15, rotationEnabled: true }
 };
 
-// Achievement definitions
 const ACHIEVEMENTS = [
   { id: 'speed_demon', name: 'Speed Demon', description: 'Complete puzzle under 2 minutes', icon: '⚡' },
   { id: 'perfectionist', name: 'Perfectionist', description: 'Complete without misplacing pieces', icon: '✨' },
   { id: 'persistent', name: 'Persistent', description: 'Complete on expert difficulty', icon: '🏆' }
 ];
 
-// Sound System Class
+// 3. Helper Classes
 class SoundSystem {
   constructor() {
     this.context = new (window.AudioContext || window.webkitAudioContext)();
@@ -67,7 +67,6 @@ class SoundSystem {
   }
 }
 
-// Particle System
 class ParticleSystem {
   constructor(scene) {
     this.particles = [];
@@ -124,7 +123,7 @@ class ParticleSystem {
   }
 }
 
-// Shader for puzzle pieces
+// 4. Shaders
 const puzzlePieceShader = {
   vertexShader: `
     varying vec2 vUv;
@@ -175,8 +174,72 @@ const puzzlePieceShader = {
   `
 };
 
+// 5. Helper functions (used within component)
+const handlePieceSnap = (piece) => {
+  const originalPos = piece.userData.originalPosition;
+  const duration = 0.3;
+  const startPos = piece.position.clone();
+  const startTime = Date.now();
+  
+  const animate = () => {
+    const progress = Math.min((Date.now() - startTime) / (duration * 1000), 1);
+    const easeProgress = 1 - Math.pow(1 - progress, 3); // Cubic ease-out
+    
+    piece.position.lerpVectors(startPos, originalPos, easeProgress);
+    
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      piece.position.copy(originalPos);
+      particleSystemRef.current.emit(piece.position, 30);
+    }
+  };
+  
+  animate();
+};
+
+const handlePieceComplete = (piece) => {
+  // Existing celebration effect
+  particleSystemRef.current.emit(piece.position, 30);
+  
+  // Add a ripple effect
+  const ripple = new THREE.Mesh(
+    new THREE.CircleGeometry(0.1, 32),
+    new THREE.MeshBasicMaterial({
+      color: 0x4a90e2,
+      transparent: true,
+      opacity: 0.5
+    })
+  );
+  ripple.position.copy(piece.position);
+  ripple.position.z = 0.01;
+  sceneRef.current.add(ripple);
+
+  // Animate ripple
+  const startScale = 1;
+  const endScale = 2;
+  const duration = 1000;
+  const start = Date.now();
+
+  const animateRipple = () => {
+    const elapsed = Date.now() - start;
+    const progress = elapsed / duration;
+
+    if (progress < 1) {
+      const scale = startScale + (endScale - startScale) * progress;
+      ripple.scale.set(scale, scale, 1);
+      ripple.material.opacity = 0.5 * (1 - progress);
+      requestAnimationFrame(animateRipple);
+    } else {
+      sceneRef.current.remove(ripple);
+    }
+  };
+  animateRipple();
+};
+
+// 6. Main Component
 const PuzzleGame = () => {
-  // State management
+  // State declarations
   const [image, setImage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -189,6 +252,7 @@ const PuzzleGame = () => {
   const [showShareModal, setShowShareModal] = useState(false);
   const [startTime, setStartTime] = useState(null);
   const [difficulty, setDifficulty] = useState(4); // default difficulty
+  const [gameId, setGameId] = useState(null);
 
   // Refs
   const containerRef = useRef(null);
@@ -208,14 +272,13 @@ const PuzzleGame = () => {
   const defaultCameraPosition = { x: 0, y: 0, z: 5 };
   const defaultControlsTarget = new THREE.Vector3(0, 0, 0);
 
-  // Timer formatting
+  // Helper functions
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Game state management
   const startGame = () => {
     setGameState('playing');
     setIsTimerRunning(true);
@@ -239,13 +302,13 @@ const PuzzleGame = () => {
   const togglePause = () => {
     if (gameState === 'playing') {
       setGameState('paused');
-      setIsTimerRunning(true);
-      // if (gameId) {
-      //   updateGameState({ state: 'paused' });
-      // }
+      setIsTimerRunning(false);
+      if (gameId) {
+        updateGameState({ state: 'paused' });
+      }
     } else if (gameState === 'paused') {
       setGameState('playing');
-      setIsTimerRunning(false);
+      setIsTimerRunning(true);
       if (gameId) {
         updateGameState({ state: 'playing' });
       }
@@ -472,6 +535,8 @@ const PuzzleGame = () => {
 
     // Animation loop
     const animate = () => {
+      if (!particleSystemRef.current) return;
+
       requestAnimationFrame(animate);
       
       const deltaTime = clockRef.current.getDelta();
@@ -535,6 +600,7 @@ const PuzzleGame = () => {
     const mouse = new THREE.Vector2();
     let isDragging = false;
     let dragPlane = new THREE.Plane();
+    const dragOffset = new THREE.Vector3();
     
     const handleMouseDown = (event) => {
       event.preventDefault();
@@ -547,17 +613,31 @@ const PuzzleGame = () => {
       const intersects = raycaster.intersectObjects(puzzlePiecesRef.current);
 
       if (intersects.length > 0) {
+        const piece = intersects[0].object;
+        
+        // Prevent interaction if piece is already placed
+        if (piece.userData.isPlaced) return;
+
         isDragging = true;
-        selectedPieceRef.current = intersects[0].object;
+        selectedPieceRef.current = piece;
         controlsRef.current.enabled = false;
 
-        selectedPieceRef.current.material.uniforms.selected.value = 1.0;
-        
-        const normal = new THREE.Vector3(0, 0, 1);
-        dragPlane.setFromNormalAndCoplanarPoint(
-          normal,
-          selectedPieceRef.current.position
+        // Play pickup sound
+        if (piece.userData.onPickup) {
+          piece.userData.onPickup();
+        }
+
+        // Calculate drag offset and update shader
+        const intersectPoint = new THREE.Vector3();
+        raycaster.ray.intersectPlane(
+          new THREE.Plane(new THREE.Vector3(0, 0, 1)),
+          intersectPoint
         );
+        dragOffset.subVectors(selectedPieceRef.current.position, intersectPoint);
+
+        if (selectedPieceRef.current.material.uniforms) {
+          selectedPieceRef.current.material.uniforms.selected.value = 1.0;
+        }
       }
     };
 
@@ -572,7 +652,7 @@ const PuzzleGame = () => {
       const intersectPoint = new THREE.Vector3();
       raycaster.ray.intersectPlane(dragPlane, intersectPoint);
       
-      selectedPieceRef.current.position.copy(intersectPoint);
+      selectedPieceRef.current.position.copy(intersectPoint).add(dragOffset);
       
       const originalPos = selectedPieceRef.current.userData.originalPosition;
       const distance = originalPos.distanceTo(selectedPieceRef.current.position);
@@ -927,83 +1007,5 @@ const PuzzleGame = () => {
   );
 };
 
+// 7. Export
 export default PuzzleGame;
-
-// Add snapping animation
-const handlePieceSnap = (piece) => {
-  const originalPos = piece.userData.originalPosition;
-  const duration = 0.3;
-  const startPos = piece.position.clone();
-  const startTime = Date.now();
-  
-  const animate = () => {
-    const progress = Math.min((Date.now() - startTime) / (duration * 1000), 1);
-    const easeProgress = 1 - Math.pow(1 - progress, 3); // Cubic ease-out
-    
-    piece.position.lerpVectors(startPos, originalPos, easeProgress);
-    
-    if (progress < 1) {
-      requestAnimationFrame(animate);
-    } else {
-      piece.position.copy(originalPos);
-      particleSystemRef.current.emit(piece.position, 30);
-    }
-  };
-  
-  animate();
-};
-
-// Enhance the particle effect for piece placement
-const handlePieceComplete = (piece) => {
-  // Existing celebration effect
-  particleSystemRef.current.emit(piece.position, 30);
-  
-  // Add a ripple effect
-  const ripple = new THREE.Mesh(
-    new THREE.CircleGeometry(0.1, 32),
-    new THREE.MeshBasicMaterial({
-      color: 0x4a90e2,
-      transparent: true,
-      opacity: 0.5
-    })
-  );
-  ripple.position.copy(piece.position);
-  ripple.position.z = 0.01;
-  sceneRef.current.add(ripple);
-
-  // Animate ripple
-  const startScale = 1;
-  const endScale = 2;
-  const duration = 1000;
-  const start = Date.now();
-
-  const animateRipple = () => {
-    const elapsed = Date.now() - start;
-    const progress = elapsed / duration;
-
-    if (progress < 1) {
-      const scale = startScale + (endScale - startScale) * progress;
-      ripple.scale.set(scale, scale, 1);
-      ripple.material.opacity = 0.5 * (1 - progress);
-      requestAnimationFrame(animateRipple);
-    } else {
-      sceneRef.current.remove(ripple);
-    }
-  };
-  animateRipple();
-};
-
-// Add completion handler
-useEffect(() => {
-  if (progress === 100 && auth?.currentUser) {
-    handlePuzzleCompletion({
-      puzzleId: `custom_${Date.now()}`,
-      userId: auth.currentUser.uid,
-      playerName: auth.currentUser.displayName || 'Anonymous',
-      startTime,
-      difficulty,
-      imageUrl: image,
-      timer: timeElapsed
-    });
-  }
-}, [progress, auth, startTime, difficulty, image, timeElapsed]);
