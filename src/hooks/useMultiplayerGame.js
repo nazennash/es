@@ -126,25 +126,28 @@ export const useMultiplayerGame = (gameId) => {
   };
 
   const syncPieceMovement = async (piece) => {
-      if (!gameId || !currentUser) return;
-      try {
-        await update(ref(database, `games/${gameId}/puzzle/pieces/${piece.userData.id}`), {
-          position: {
-            x: piece.position.x,
-            y: piece.position.y,
-            z: piece.position.z
-          },
-          rotation: piece.rotation.z,
-          isPlaced: piece.userData.isPlaced,
-          lastMoved: {
-            by: currentUser.uid,
-            at: Date.now()
-          }
-        });
-      } catch (error) {
-        setError(error.message);
-      }
-    };
+    if (!gameId || !currentUser) return;
+    try {
+      // Don't sync if piece is already placed
+      if (piece.userData.isPlaced) return;
+
+      await update(ref(database, `games/${gameId}/puzzle/pieces/${piece.userData.id}`), {
+        position: {
+          x: piece.position.x,
+          y: piece.position.y,
+          z: piece.position.z
+        },
+        rotation: piece.rotation.z,
+        isPlaced: piece.userData.isPlaced,
+        lastMoved: {
+          by: currentUser.uid,
+          at: Date.now()
+        }
+      });
+    } catch (error) {
+      setError(error.message);
+    }
+  };
 
   const lockPiece = async (pieceId) => {
     if (!gameId || !currentUser) return false;

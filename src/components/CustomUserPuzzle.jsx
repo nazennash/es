@@ -760,8 +760,10 @@ const PuzzleGame = () => {
       setImage(e.target.result);
       createPuzzlePieces(e.target.result).then(() => {
         setLoading(false);
-        setGameState('initial'); // Reset to initial state
-        setIsTimerRunning(false);
+        // setGameState('initial'); // Reset to initial state
+        setGameState('playing'); // Reset to initial state
+        setIsTimerRunning(true);
+        // setIsTimerRunning(false);
         setCompletedPieces(0);
         setProgress(0);
         setTimeElapsed(0);

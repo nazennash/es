@@ -230,50 +230,6 @@ const handlePieceSnap = (piece, particleSystem) => {
 
 
 // 6. Main Component
-const ImageSelectionModal = ({ images, onSelect, isOpen, onClose }) => {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-xl max-w-4xl w-full p-6 space-y-6">
-        <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-white">Choose Your Puzzle</h2>
-          <button 
-            onClick={onClose}
-            className="text-gray-400 hover:text-white"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {images.map((img) => (
-            <div
-              key={img.id}
-              onClick={() => {
-                onSelect(img);
-                onClose();
-              }}
-              className="group relative overflow-hidden rounded-lg cursor-pointer transform transition-all duration-300 hover:scale-105"
-            >
-              <img
-                src={img.src}
-                alt={img.title}
-                className="w-full h-48 object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent flex flex-col justify-end p-4">
-                <h3 className="text-white font-bold text-lg">{img.title}</h3>
-                <p className="text-gray-200 text-sm">{img.description}</p>
-              </div>
-              <div className="absolute inset-0 bg-blue-500/20 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Modify the main component
 const PuzzleGame = () => {
   // State declarations
   const [image, setImage] = useState(null);
@@ -290,7 +246,6 @@ const PuzzleGame = () => {
   const [difficulty, setDifficulty] = useState(4); // default difficulty
   const [gameId, setGameId] = useState(null);
   const [completedAchievements, setCompletedAchievements] = useState([]);
-  const [showImageSelection, setShowImageSelection] = useState(true);
 
   // Refs
   const containerRef = useRef(null);
@@ -1152,149 +1107,186 @@ const PuzzleGame = () => {
   ];
 
   return (
-    <div className="w-full h-screen flex flex-col bg-gradient-to-b from-gray-900 to-gray-800">
-      {/* Top Navigation Bar */}
-      <div className="px-6 py-4 bg-gray-800/50 backdrop-blur-sm border-b border-gray-700 flex items-center justify-between">
+    <div className="w-full h-screen flex flex-col bg-gray-900">
+      {/* Header with controls */}
+      <div className="p-4 bg-gray-800 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          {/* Logo/Title */}
-          <h1 className="text-2xl font-bold text-white">Cultural Puzzle</h1>
-          
-          {/* Game Controls */}
+          <div className="flex items-center gap-4 overflow-x-auto p-4">
+            {PRESET_IMAGES.map((img) => (
+              <div
+                key={img.id}
+                onClick={() => {
+                  setImage(img.src);
+                  createPuzzlePieces(img.src).then(() => {
+                    setLoading(false);
+                    setGameState('playing');
+                    setIsTimerRunning(true);
+                    setCompletedPieces(0);
+                    setProgress(0);
+                    setTimeElapsed(0);
+                    if (timerRef.current) {
+                      clearInterval(timerRef.current);
+                    }
+                  });
+                }}
+                className="flex flex-col items-center bg-gray-800 rounded-lg p-4 cursor-pointer 
+                          hover:bg-gray-700 transition-colors min-w-[200px]"
+              >
+                <img
+                  src={img.src}
+                  alt={img.title}
+                  className="w-full h-32 object-cover rounded-lg mb-2"
+                />
+                <h3 className="text-white font-bold">{img.title}</h3>
+                <p className="text-gray-400 text-sm text-center">{img.description}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Play/Pause controls */}
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowImageSelection(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-2 transition-colors"
-            >
-              <Image className="w-4 h-4" />
-              <span>Select Image</span>
-            </button>
-            
             {gameState !== 'initial' && (
               <button
                 onClick={togglePause}
-                className="p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+                className="p-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
               >
-                {gameState === 'playing' ? <Pause /> : <Play />}
+                {gameState === 'playing' ? (
+                  <Pause className="w-5 h-5" />
+                ) : (
+                  <Play className="w-5 h-5" />
+                )}
+              </button>
+            )}
+            
+            {gameState === 'initial' && (
+              <button
+                onClick={startGame}
+                className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                <Play className="w-5 h-5" />
               </button>
             )}
           </div>
+
+          {/* Timer display */}
+          <div className="flex items-center gap-2 text-white bg-gray-700 px-3 py-1 rounded-lg">
+            <Clock className="w-4 h-4" />
+            <span>{formatTime(timeElapsed)}</span>
+          </div>
+
+          <button className="p-2 text-gray-300 hover:text-white">
+            <Info className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* Game Stats */}
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2 bg-gray-700/50 px-4 py-2 rounded-lg">
-            <Clock className="w-4 h-4 text-blue-400" />
-            <span className="text-white font-mono">{formatTime(timeElapsed)}</span>
-          </div>
-          
-          {totalPieces > 0 && (
-            <div className="flex items-center gap-3">
+        {/* Progress indicator */}
+        {totalPieces > 0 && (
+          <div className="flex items-center gap-4">
+            <div className="flex flex-col items-end">
               <div className="text-sm text-gray-400">Progress</div>
-              <div className="w-40 h-2 bg-gray-700 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-blue-500 to-green-500 transition-all duration-500"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <div className="text-white font-medium">
-                {Math.round(progress)}%
+              <div className="text-lg font-bold text-white">
+                {completedPieces} / {totalPieces} pieces
               </div>
             </div>
+            <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-blue-500 to-green-500 
+                          transition-all duration-500 ease-out relative"
+                style={{ width: `${progress}%` }}
+              >
+                <div 
+                  className="absolute inset-0 bg-white opacity-20 
+                            animate-pulse"
+                />
+              </div>
+            </div>
+            {progress === 100 && (
+              <div className="flex items-center gap-2 text-green-400">
+                <Check className="w-5 h-5" />
+                <span>Complete! - {formatTime(timeElapsed)}</span>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          {/* ...existing controls... */}
+          
+          {progress === 100 && (
+            <button
+              onClick={() => setShowShareModal(true)}
+              className="p-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
+              title="Share Achievement"
+            >
+              <Share2 className="w-5 h-5" />
+            </button>
           )}
         </div>
       </div>
 
-      {/* Main Game Area */}
-      <div className="flex-1 relative">
+      {/* Main puzzle area */}
+      <div ref={puzzleContainerRef} className="flex-1 relative">
         <div ref={containerRef} className="w-full h-full" />
 
-        {/* Side Controls */}
-        <div className="absolute right-6 top-6 flex flex-col gap-2 bg-gray-800/90 backdrop-blur-sm p-2 rounded-lg">
+        {/* Camera controls overlay */}
+        <div className="absolute right-4 top-4 flex flex-col gap-2">
           <button
             onClick={handleZoomIn}
-            className="p-2 hover:bg-gray-700 text-white rounded transition-colors"
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
             title="Zoom In"
           >
             <ZoomIn className="w-5 h-5" />
           </button>
           <button
             onClick={handleZoomOut}
-            className="p-2 hover:bg-gray-700 text-white rounded transition-colors"
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
             title="Zoom Out"
           >
             <ZoomOut className="w-5 h-5" />
           </button>
-          <div className="w-full h-px bg-gray-700 my-1" />
           <button
             onClick={handleResetView}
-            className="p-2 hover:bg-gray-700 text-white rounded transition-colors"
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
             title="Reset View"
           >
             <Maximize2 className="w-5 h-5" />
           </button>
           <button
             onClick={handleResetGame}
-            className="p-2 hover:bg-gray-700 text-white rounded transition-colors"
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
             title="Reset Puzzle"
           >
             <RotateCcw className="w-5 h-5" />
           </button>
-          <div className="w-full h-px bg-gray-700 my-1" />
           <button
             onClick={() => setShowThumbnail(!showThumbnail)}
-            className={`p-2 text-white rounded transition-colors ${
-              showThumbnail ? 'bg-blue-600 hover:bg-blue-700' : 'hover:bg-gray-700'
-            }`}
+            className="p-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
             title="Toggle Reference Image"
           >
             <Image className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Reference Image */}
-        {showThumbnail && image && (
-          <div className="absolute left-6 top-6 p-3 bg-gray-800/90 backdrop-blur-sm rounded-lg shadow-xl">
-            <img
-              src={image}
-              alt="Reference"
-              className="w-48 h-auto rounded border border-gray-700"
-            />
+        {/* Loading overlay */}
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center 
+                        bg-gray-900 bg-opacity-75 z-10">
+            <div className="text-xl text-white">Loading puzzle...</div>
           </div>
         )}
 
-        {/* Loading Overlay */}
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-900/75 backdrop-blur-sm">
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-              <div className="text-xl text-white font-medium">Loading puzzle...</div>
+        {/* Thumbnail overlay */}
+        {showThumbnail && image && (
+          <div className="absolute left-4 top-4 p-2 bg-gray-800 rounded-lg shadow-lg">
+            <div className="relative">
+              <img
+                src={image}
+                alt="Reference"
+                className="w-48 h-auto rounded border border-gray-600"
+              />
             </div>
           </div>
         )}
       </div>
-
-      {/* Image Selection Modal */}
-      <ImageSelectionModal
-        images={PRESET_IMAGES}
-        onSelect={(img) => {
-          setImage(img.src);
-          createPuzzlePieces(img.src).then(() => {
-            setLoading(false);
-            setGameState('playing');
-            setIsTimerRunning(true);
-            setCompletedPieces(0);
-            setProgress(0);
-            setTimeElapsed(0);
-            if (timerRef.current) {
-              clearInterval(timerRef.current);
-            }
-          });
-        }}
-        isOpen={showImageSelection}
-        onClose={() => setShowImageSelection(false)}
-      />
-
-      {/* Share Modal */}
       {showShareModal && <ShareModal />}
     </div>
   );

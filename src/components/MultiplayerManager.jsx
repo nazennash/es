@@ -587,6 +587,10 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
 
       if (intersects.length > 0) {
         const piece = intersects[0].object;
+        
+        // Prevent interaction if piece is already placed
+        if (piece.userData.isPlaced) return;
+
         const pieceId = piece.userData.id;
 
         // Check if piece is locked by another user
@@ -602,7 +606,7 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
         selectedPieceRef.current = piece;
         controlsRef.current.enabled = false;
 
-        // Calculate drag offset
+        // Calculate drag offset and update shader
         const intersectPoint = new THREE.Vector3();
         raycaster.ray.intersectPlane(
           new THREE.Plane(new THREE.Vector3(0, 0, 1)),
@@ -610,7 +614,6 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
         );
         dragOffset.subVectors(selectedPieceRef.current.position, intersectPoint);
 
-        // Update shader uniforms
         if (selectedPieceRef.current.material.uniforms) {
           selectedPieceRef.current.material.uniforms.selected.value = 1.0;
         }
@@ -1038,6 +1041,76 @@ const PuzzleGame = ({ gameId: propGameId, isHost: propIsHost, user }) => {
       }
     }
   }, [progress]);
+
+  // Timer management
+  useEffect(() => {
+    if (!gameState || !isTimerRunning) return;
+
+    const timer = setInterval(() => {
+      setTimeElapsed(prev => prev + 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [gameState, isTimerRunning]);
+
+  // Add game state synchronization
+  useEffect(() => {
+    if (!gameId || !currentUser) return;
+
+    const gameStateRef = ref(database, `games/${gameId}/state`);
+    const unsubscribe = onValue(gameStateRef, (snapshot) => {
+      const state = snapshot.val();
+      if (state) {
+        setGameState(state);
+        setIsTimerRunning(state === 'playing');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [gameId, currentUser]);
+
+  // Implement all initialized systems
+  useEffect(() => {
+    // Initialize sound system
+    const soundSystem = new SoundSystem();
+    soundSystem.initialize().then(() => {
+      // Add sound effects to piece interactions
+      const addSoundEffects = () => {
+        puzzlePiecesRef.current.forEach(piece => {
+          piece.userData.onPickup = () => soundSystem.play('pickup');
+          piece.userData.onPlace = () => soundSystem.play('place');
+        });
+      };
+      addSoundEffects();
+    });
+
+    // Initialize particle system
+    if (sceneRef.current) {
+      particleSystemRef.current = new ParticleSystem(sceneRef.current);
+    }
+
+    // Setup achievement tracking
+    const checkAchievements = () => {
+      if (progress === 100) {
+        if (timeElapsed < 120) {
+          // Speed demon achievement
+          handleAchievement('speed_demon');
+        }
+        if (!misplacedPieces) {
+          // Perfectionist achievement
+          handleAchievement('perfectionist');
+        }
+        if (difficulty === 'expert') {
+          // Persistent achievement
+          handleAchievement('persistent');
+        }
+      }
+    };
+
+    return () => {
+      soundSystem.context.close();
+    };
+  }, []);
 
   return (
     <div className="w-full h-screen flex flex-col bg-gray-900">
