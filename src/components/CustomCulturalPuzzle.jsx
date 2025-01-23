@@ -13,6 +13,9 @@ import { ref, update, getDatabase } from 'firebase/database';
 import elephant from '../assets/elephant.png';
 import pyramid from '../assets/pyramid.png';
 import african from '../assets/african.png';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Tooltip } from 'react-tooltip';
+import DifficultyBar, { difficulties } from './DifficultyBar';
 
 // 2. Constants
 const DIFFICULTY_SETTINGS = {
@@ -291,6 +294,7 @@ const PuzzleGame = () => {
   const [gameId, setGameId] = useState(null);
   const [completedAchievements, setCompletedAchievements] = useState([]);
   const [showImageSelection, setShowImageSelection] = useState(true);
+  const [selectedDifficulty, setSelectedDifficulty] = useState(difficulties[0]);
 
   // Refs
   const containerRef = useRef(null);
@@ -467,7 +471,7 @@ const PuzzleGame = () => {
     const baseSize = 2.5; // Increased base size for better visibility
     
     // Reduced grid size for larger pieces
-    const gridSize = { x: 3, y: 2 }; // Fewer pieces for cultural puzzles
+    const gridSize = selectedDifficulty.grid; // Use selected difficulty grid size
     const pieceSize = {
       x: (baseSize * aspectRatio) / gridSize.x,
       y: baseSize / gridSize.y
@@ -1161,6 +1165,28 @@ const PuzzleGame = () => {
     { id: 'african', src: african, title: 'African Culture', description: 'Traditional African cultural scene' }
   ];
 
+  // Add difficulty change handler
+  const handleDifficultyChange = (newDifficulty) => {
+    if (gameState === 'playing') {
+      const confirmChange = window.confirm('Changing difficulty will reset the current puzzle. Continue?');
+      if (!confirmChange) return;
+    }
+    
+    setSelectedDifficulty(newDifficulty);
+    setDifficulty(newDifficulty.id);
+    if (image) {
+      setLoading(true);
+      createPuzzlePieces(image).then(() => {
+        setLoading(false);
+        setGameState('playing');
+        setIsTimerRunning(true);
+        setCompletedPieces(0);
+        setProgress(0);
+        setTimeElapsed(0);
+      });
+    }
+  };
+
   return (
     <div className="w-full h-screen flex flex-col bg-gradient-to-b from-gray-900 to-gray-800">
       {/* Top Navigation Bar */}
@@ -1178,6 +1204,17 @@ const PuzzleGame = () => {
               <Image className="w-4 h-4" />
               <span>Select Image</span>
             </button>
+
+            {/* Add Timer Display and Difficulty Bar */}
+            <div className="flex items-center gap-2 bg-gray-700/50 px-4 py-2 rounded-lg">
+              <Clock className="w-4 h-4 text-blue-400" />
+              <span className="text-white font-mono">{formatTime(timeElapsed)}</span>
+            </div>
+
+            <DifficultyBar
+              selectedDifficulty={selectedDifficulty}
+              onSelect={handleDifficultyChange}
+            />
             
             {gameState !== 'initial' && (
               <button

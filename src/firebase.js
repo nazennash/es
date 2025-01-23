@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-import { getDatabase, ref, set, onValue, update, remove, onDisconnect, push } from 'firebase/database';
+import { getDatabase, ref, set, onValue, update, remove, onDisconnect, push, runTransaction, get, increment } from 'firebase/database';
 import { nanoid } from 'nanoid';
 
 
@@ -40,7 +40,10 @@ export {
   set, 
   onValue, 
   update, 
-  nanoid 
+  nanoid,
+  runTransaction,
+  get,
+  increment 
 };
 
 
