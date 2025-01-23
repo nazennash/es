@@ -14,10 +14,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Tooltip } from 'react-tooltip';
 import DifficultyBar, { difficulties } from './DifficultyBar';
 import { nanoid } from 'nanoid';
-import { toast } from 'react-hot-toast';
-
-// Add new UI-specific imports
-import { Loader2 } from 'lucide-react';
 
 // 2. Constants
 const DIFFICULTY_SETTINGS = {
@@ -240,69 +236,10 @@ const handlePieceSnap = (piece, particleSystem) => {
   animate();
 };
 
-// Add DifficultySelector component
-const DifficultySelector = ({ selectedDifficulty, onSelect }) => (
-  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-    {difficulties.map((diff) => (
-      <button
-        key={diff.id}
-        onClick={() => onSelect(diff)}
-        className={`p-4 rounded-lg border-2 transition-all ${
-          selectedDifficulty.id === diff.id
-            ? 'border-blue-500 bg-blue-500/10'
-            : 'border-gray-700 hover:border-blue-400'
-        }`}
-      >
-        <h3 className="text-lg font-bold text-white">{diff.name}</h3>
-        <p className="text-sm text-gray-400">{diff.description}</p>
-        <div className="mt-2 text-xs text-gray-500">
-          Grid: {diff.grid.x}x{diff.grid.y}
-        </div>
-      </button>
-    ))}
-  </div>
-);
 
-// Add UI enhancement components
-const LoadingOverlay = ({ message = "Loading..." }) => (
-  <motion.div
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50"
-  >
-    <div className="flex flex-col items-center gap-4">
-      <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
-      <p className="text-white text-lg font-medium">{message}</p>
-    </div>
-  </motion.div>
-);
-
-const PlayerCard = ({ player, score, isCurrentPlayer }) => (
-  <motion.div
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    className={`p-3 rounded-lg ${
-      isCurrentPlayer ? 'bg-blue-600/20 border border-blue-500/50' : 'bg-gray-800/50'
-    }`}
-  >
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        <div className={`w-2 h-2 rounded-full ${
-          player.status === 'online' ? 'bg-green-500' : 'bg-gray-500'
-        }`} />
-        <span className="text-white font-medium">{player.name}</span>
-        {player.isHost && (
-          <span className="px-2 py-0.5 bg-blue-600/50 rounded text-xs text-blue-200">Host</span>
-        )}
-      </div>
-      <span className="text-gray-300">{score} pieces</span>
-    </div>
-  </motion.div>
-);
 
 // 6. Main Component
-const PuzzleGame = ({ gameId: propGameId, isMultiPlayer, user }) => {
+const PuzzleGame = () => {
   // State declarations
   const [image, setImage] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -322,7 +259,7 @@ const PuzzleGame = ({ gameId: propGameId, isMultiPlayer, user }) => {
   const [selectedDifficulty, setSelectedDifficulty] = useState(difficulties[0]);
   const [players, setPlayers] = useState({});
   const [gameRef] = useState(ref(database, `games/${gameId}`));
-  const [roomCode, setRoomCode] = useState(propGameId || null);
+  const [roomCode, setRoomCode] = useState(null);
   const [isHost, setIsHost] = useState(false);
   const [playerScores, setPlayerScores] = useState({});
   const [lockedPieces, setLockedPieces] = useState({});
@@ -331,8 +268,6 @@ const PuzzleGame = ({ gameId: propGameId, isMultiPlayer, user }) => {
   const [isCompetitive, setIsCompetitive] = useState(false);
   const [leaderboard, setLeaderboard] = useState([]);
   const [roomRef] = useState(ref(database, `rooms/${roomCode}`));
-
-  console.log("Roomcode", roomCode);
 
   // Refs
   const containerRef = useRef(null);
@@ -889,16 +824,12 @@ const PuzzleGame = ({ gameId: propGameId, isMultiPlayer, user }) => {
     element.addEventListener('mouseup', handleMouseUp);
     element.addEventListener('mouseleave', handleMouseUp);
 
-    // Add cursor tracking
-    element.addEventListener('mousemove', handleCursorTracking);
-
     // Cleanup
     return () => {
       element.removeEventListener('mousedown', handleMouseDown);
       element.removeEventListener('mousemove', handleMouseMove);
       element.removeEventListener('mouseup', handleMouseUp);
       element.removeEventListener('mouseleave', handleMouseUp);
-      element.removeEventListener('mousemove', handleCursorTracking);
     };
   }, [gameState, totalPieces]);
 
@@ -1190,7 +1121,7 @@ const PuzzleGame = ({ gameId: propGameId, isMultiPlayer, user }) => {
   };
 
   // Modify puzzle completion handler
-  const handlePuzzleCompletion = async (completionData) => {
+  const handlePuzzleCompletion = async () => {
     if (!auth.currentUser) return;
     
     const achievements = checkAchievements();
@@ -1236,96 +1167,26 @@ const PuzzleGame = ({ gameId: propGameId, isMultiPlayer, user }) => {
     }
   };
 
-  // Consolidated handlePieceMove implementation
-  const handlePieceMove = (piece, position) => {
-    if (!piece.id || (!gameId && !roomCode)) return;
-    
-    const pieceRef = ref(database, `${gameId ? 'games' : 'rooms'}/${gameId || roomCode}/pieces/${piece.id}`);
-    
-    runTransaction(pieceRef, (currentData) => {
-      // Check if piece is locked by another player
-      if (currentData?.lockedBy && currentData.lockedBy !== auth.currentUser.uid) {
-        return; // Abort if locked by another player
-      }
-      
-      // Check for newer updates
-      if (currentData && currentData.timestamp > (piece.lastUpdate || 0)) {
-        return; // Abort if newer update exists
-      }
-      
-      return {
-        position: {
-          x: position.x,
-          y: position.y,
-          z: position.z
-        },
-        lockedBy: auth.currentUser.uid,
-        lastMovedBy: auth.currentUser.uid,
-        timestamp: serverTimestamp(),
-        lastUpdate: Date.now()
-      };
-    }).catch(error => {
-      console.error('Error updating piece position:', error);
-    });
-  };
+  
 
-  // Implement proper multiplayer initialization
-  const initializeMultiplayer = async () => {
-    if (!auth.currentUser) return;
-    
-    const newGameId = nanoid();
-    setGameId(newGameId);
-    
-    const gameRef = ref(database, `games/${newGameId}`);
-    await set(gameRef, {
-      createdAt: serverTimestamp(),
-      hostId: auth.currentUser.uid,
-      status: GAME_STATES.WAITING,
-      difficulty,
-      imageUrl: image,
-      players: {
-        [auth.currentUser.uid]: {
-          name: auth.currentUser.displayName || 'Anonymous',
-          isHost: true,
-          status: PLAYER_STATUS.ONLINE
-        }
-      }
-    });
-    
-    // Setup presence system
-    const presenceRef = ref(database, `.info/connected`);
-    onValue(presenceRef, (snapshot) => {
-      if (snapshot.val()) {
-        const playerRef = ref(database, `games/${newGameId}/players/${auth.currentUser.uid}`);
-        onDisconnect(playerRef).update({
-          status: PLAYER_STATUS.OFFLINE,
-          lastSeen: serverTimestamp()
-        });
-      }
-    });
-    
-    return newGameId;
-  };
-
-  // Add proper cursor tracking
-  const handleCursorTracking = (event) => {
-    if (!gameId || !auth.currentUser || !containerRef.current) return;
-    
-    const rect = containerRef.current.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    
-    const cursorRef = ref(database, `games/${gameId}/cursors/${auth.currentUser.uid}`);
-    set(cursorRef, {
-      x,
-      y,
-      timestamp: serverTimestamp(),
-      playerName: auth.currentUser.displayName || 'Anonymous'
-    });
-    
-    // Remove cursor data on disconnect
-    onDisconnect(cursorRef).remove();
-  };
+  // Add difficulty modal component
+  const DifficultyModal = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-800 rounded-xl max-w-4xl w-full p-6">
+        <h2 className="text-2xl font-bold text-white mb-4">Select Difficulty</h2>
+        <DifficultySelector
+          selectedDifficulty={selectedDifficulty}
+          onSelect={(difficulty) => {
+            setSelectedDifficulty(difficulty);
+            setShowDifficultyModal(false);
+            if (image) {
+              createPuzzlePieces(image);
+            }
+          }}
+        />
+      </div>
+    </div>
+  );
 
   // Add this effect for real-time player sync
   useEffect(() => {
@@ -1354,27 +1215,27 @@ const PuzzleGame = ({ gameId: propGameId, isMultiPlayer, user }) => {
   }, [gameId]);
   
   // Modify piece movement handling to sync with other players
-  // const handlePieceMove = (piece, position) => {
-  //   if (!gameId || !piece.id) return;
+  const handlePieceMove = (piece, position) => {
+    if (!gameId || !piece.id) return;
     
-  //   const pieceRef = ref(database, `games/${gameId}/pieces/${piece.id}`);
-  //   runTransaction(pieceRef, (currentData) => {
-  //     if (currentData && currentData.timestamp > (piece.lastUpdate || 0)) {
-  //       return undefined; // Abort if newer update exists
-  //     }
+    const pieceRef = ref(database, `games/${gameId}/pieces/${piece.id}`);
+    runTransaction(pieceRef, (currentData) => {
+      if (currentData && currentData.timestamp > (piece.lastUpdate || 0)) {
+        return undefined; // Abort if newer update exists
+      }
       
-  //     return {
-  //       position: {
-  //         x: position.x,
-  //         y: position.y,
-  //         z: position.z
-  //       },
-  //       lastMovedBy: auth.currentUser.uid,
-  //       timestamp: serverTimestamp(),
-  //       lastUpdate: Date.now()
-  //     };
-  //   });
-  // };
+      return {
+        position: {
+          x: position.x,
+          y: position.y,
+          z: position.z
+        },
+        lastMovedBy: auth.currentUser.uid,
+        timestamp: serverTimestamp(),
+        lastUpdate: Date.now()
+      };
+    });
+  };
   
   // Add piece sync effect
   useEffect(() => {
@@ -1414,6 +1275,11 @@ const PuzzleGame = ({ gameId: propGameId, isMultiPlayer, user }) => {
     setInviteLink(generateInviteLink(newRoomCode));
     return newRoomCode;
   };
+
+  const joinRoom = async (code) => {
+    const roomRef = ref(database, `rooms/${code}`);
+    const snapshot = await get(roomRef);
+    if (!snapshot.exists()) {
 
   const joinRoom = async (code) => {
     const roomRef = ref(database, `rooms/${code}`);
@@ -1603,7 +1469,7 @@ const PuzzleGame = ({ gameId: propGameId, isMultiPlayer, user }) => {
   // Add these functions
   const generateInviteLink = (roomCode) => {
     const baseUrl = window.location.origin;
-    return `${baseUrl}/join/${roomCode}`;
+    return `${baseUrl}/#/puzzle/multiplayer/join_${roomCode}`;
   };
 
   const copyInviteLink = () => {
@@ -1686,412 +1552,171 @@ const PuzzleGame = ({ gameId: propGameId, isMultiPlayer, user }) => {
   };
 
   // Modify handlePieceMove for multiplayer
-  // const handlePieceMove = (piece, position) => {
-  //   if (!roomCode || !piece.id) return;
+  const handlePieceMove = (piece, position) => {
+    if (!roomCode || !piece.id) return;
     
-  //   const pieceRef = ref(database, `rooms/${roomCode}/pieces/${piece.id}`);
-  //   runTransaction(pieceRef, (currentData) => {
-  //     if (currentData?.lockedBy && currentData.lockedBy !== auth.currentUser.uid) {
-  //       return; // Exit if the piece is locked by another player
-  //     }
-      
-  //     return {
-  //       position: {
-  //         x: position.x,
-  //         y: position.y,
-  //         z: position.z
-  //       },
-  //       lockedBy: auth.currentUser.uid,
-  //       lastUpdate: serverTimestamp()
-  //     };
-  //   }).catch(error => {
-  //     console.error('Transaction error:', error);
-  //   });
-  // };
-  
-
-  // Add new constants for multiplayer status indicators
-  const PLAYER_STATUS = {
-    ONLINE: 'online',
-    AWAY: 'away',
-    OFFLINE: 'offline'
-  };
-
-  // Add this useEffect after your other useEffect declarations
-  useEffect(() => {
-    if (!auth.currentUser) return;
-  
-    // Initialize room-related functions and listeners
-    const setupMultiplayerHandlers = async () => {
+    const pieceRef = ref(database, `rooms/${roomCode}/pieces/${piece.id}`);
+    runTransaction(pieceRef, (currentData) => {
       try {
-        if (isHost && !roomCode) {
-          // Create new room if host
-          const newRoomCode = await createRoom();
-          if (newRoomCode) {
-            // Set up initial room state
-            const gameStateRef = ref(database, `rooms/${newRoomCode}/gameState`);
-            await set(gameStateRef, {
-              status: GAME_STATES.WAITING,
-              startedAt: null,
-              pieces: {},
-              players: {
-                [auth.currentUser.uid]: {
-                  name: auth.currentUser.displayName || 'Anonymous',
-                  isHost: true,
-                  status: PLAYER_STATUS.ONLINE
-                }
-              }
-            });
-          }
-        } else if (roomCode && !isHost) {
-          // Join existing room if not host
-          await joinRoom(roomCode);
+        if (currentData?.lockedBy && currentData.lockedBy !== auth.currentUser.uid) {
+          return;
         }
-  
-        // Set up cursor tracking
-        if (containerRef.current) {
-          containerRef.current.addEventListener('mousemove', updateCursorPosition);
-        }
-  
-        // Set up piece selection handlers
-        const pieceLockHandler = (piece) => {
-          if (!piece) return;
-          handlePieceSelection(piece);
+        
+        return {
+          position: {
+            x: position.x,
+            y: position.y,
+            z: position.z
+          },
+          lockedBy: auth.currentUser.uid,
+          lastUpdate: serverTimestamp()
         };
-  
-        // Add lock handler to each puzzle piece
-        puzzlePiecesRef.current.forEach(piece => {
-          piece.userData.onSelect = pieceLockHandler;
-        });
-  
-        // Listen for room state changes
-        if (roomCode) {
-          const roomStateRef = ref(database, `rooms/${roomCode}`);
-          onValue(roomStateRef, (snapshot) => {
-            if (snapshot.exists()) {
-              const roomData = snapshot.val();
-              // Update local state based on room data
-              setGameState(roomData.gameState?.status || GAME_STATES.WAITING);
-              setPlayers(roomData.players || {});
-              
-              // Sync piece positions if they exist
-              if (roomData.pieces) {
-                syncPuzzlePieces(roomData.pieces);
-              }
-            }
-          });
-  
-          // Set up presence system
-          const presenceRef = ref(database, `.info/connected`);
-          const playerRef = ref(database, `rooms/${roomCode}/players/${auth.currentUser.uid}`);
-          
-          onValue(presenceRef, (snapshot) => {
-            if (snapshot.val()) {
-              // Remove player data on disconnect
-              onDisconnect(playerRef).remove();
-              
-              // Update player status
-              update(playerRef, {
-                status: PLAYER_STATUS.ONLINE,
-                lastSeen: serverTimestamp()
-              });
-            }
-          });
-        }
       } catch (error) {
-        console.error('Error setting up multiplayer handlers:', error);
-        toast.error('Failed to initialize multiplayer features');
+        console.error('Transaction error:', error);
+        return;
       }
-    };
-  
-    setupMultiplayerHandlers();
-  
-    // Cleanup function
-    return () => {
-      if (containerRef.current) {
-        containerRef.current.removeEventListener('mousemove', updateCursorPosition);
-      }
-  
-      if (roomCode) {
-        // Clean up room data if host
-        if (isHost) {
-          remove(ref(database, `rooms/${roomCode}`));
-        } else {
-          // Just remove player data if not host
-          remove(ref(database, `rooms/${roomCode}/players/${auth.currentUser.uid}`));
-        }
-  
-        // Clear cursor data
-        remove(ref(database, `rooms/${roomCode}/cursors/${auth.currentUser.uid}`));
-      }
-  
-      // Clear piece handlers
-      puzzlePiecesRef.current.forEach(piece => {
-        piece.userData.onSelect = null;
-      });
-    };
-  }, [roomCode, isHost, auth.currentUser]);
-  
+    });
+  };
 
   return (
     <div className="w-full h-screen flex flex-col bg-gradient-to-b from-gray-900 to-gray-800">
-      {/* Enhanced Header */}
-      <motion.header
+      {/* Header with controls - Enhanced UI */}
+      <motion.div 
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="p-4 bg-gray-800/90 backdrop-blur-sm border-b border-gray-700 z-10"
+        className="p-4 bg-gray-800/90 backdrop-blur-sm border-b border-gray-700 flex items-center justify-between shadow-lg"
       >
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          {/* Game Controls */}
-          <div className="flex items-center gap-4">
-            {/* Upload Button */}
-            <label 
-              className="relative cursor-pointer group"
-              data-tooltip-id="upload-tooltip"
-              data-tooltip-content="Upload a new image to create puzzle"
+        <div className="flex items-center gap-4">
+          {/* Upload Button */}
+          <label 
+            className="relative cursor-pointer group"
+            data-tooltip-id="upload-tooltip"
+            data-tooltip-content="Upload a new image to create puzzle"
+          >
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+            />
+            <motion.div 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 group-hover:bg-blue-700 
+                        rounded-lg text-white transition-all duration-200 shadow-lg"
             >
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="hidden"
-              />
-              <motion.div 
+              <Camera className="w-5 h-5" />
+              <span className="font-medium">Upload Photo</span>
+            </motion.div>
+          </label>
+
+          {/* Game Controls */}
+          <div className="flex items-center gap-3">
+            {gameState !== 'initial' && (
+              <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 group-hover:bg-blue-700 
-                          rounded-lg text-white transition-all duration-200 shadow-lg"
+                onClick={togglePause}
+                className="p-2.5 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors shadow-md"
+                data-tooltip-id="control-tooltip"
+                data-tooltip-content={gameState === 'playing' ? 'Pause Game' : 'Resume Game'}
               >
-                <Camera className="w-5 h-5" />
-                <span className="font-medium">Upload Photo</span>
-              </motion.div>
-            </label>
-
-            {/* Game Controls */}
-            <div className="flex items-center gap-3">
-              {gameState !== 'initial' && (
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={togglePause}
-                  className="p-2.5 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors shadow-md"
-                  data-tooltip-id="control-tooltip"
-                  data-tooltip-content={gameState === 'playing' ? 'Pause Game' : 'Resume Game'}
-                >
-                  {gameState === 'playing' ? (
-                    <Pause className="w-5 h-5" />
-                  ) : (
-                    <Play className="w-5 h-5" />
-                  )}
-                </motion.button>
-              )}
-              
-              {gameState === 'initial' && (
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={startGame}
-                  className="p-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-md"
-                  data-tooltip-id="start-tooltip"
-                  data-tooltip-content="Start Game"
-                >
+                {gameState === 'playing' ? (
+                  <Pause className="w-5 h-5" />
+                ) : (
                   <Play className="w-5 h-5" />
-                </motion.button>
-              )}
-
-              {/* Timer Display */}
-              <div className="flex items-center gap-2 text-white bg-gray-700/80 px-4 py-2 rounded-lg shadow-md">
-                <Clock className="w-4 h-4 text-blue-400" />
-                <span className="font-mono text-lg">{formatTime(timeElapsed)}</span>
-              </div>
-
-              {/* Add Difficulty Bar */}
-              <DifficultyBar
-                selectedDifficulty={selectedDifficulty}
-                onSelect={handleDifficultyChange}
-              />
-
-              {/* Existing game controls */}
-              {gameState !== 'initial' && (
-                <button
-                  onClick={togglePause}
-                  className="p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
-                >
-                  {gameState === 'playing' ? <Pause /> : <Play />}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Progress Section */}
-          {totalPieces > 0 && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex items-center gap-4"
-            >
-              {/* ...existing progress UI... */}
-              <div className="flex flex-col items-end">
-                <div className="text-sm text-gray-400">Progress</div>
-                <div className="text-lg font-bold text-white">
-                  {completedPieces} / {totalPieces}
-                </div>
-              </div>
-              <div className="w-40 h-3 bg-gray-700 rounded-full overflow-hidden shadow-inner">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.5 }}
-                  className="h-full bg-gradient-to-r from-blue-500 to-green-500 relative"
-                >
-                  <div className="absolute inset-0 bg-white opacity-20 animate-pulse" />
-                </motion.div>
-              </div>
-              <AnimatePresence>
-                {progress === 100 && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    className="flex items-center gap-2 text-green-400 bg-green-900/30 px-4 py-2 rounded-lg"
-                  >
-                    <Check className="w-5 h-5" />
-                    <span className="font-medium">Complete!</span>
-                    <span className="text-green-300 font-mono">{formatTime(timeElapsed)}</span>
-                  </motion.div>
                 )}
-              </AnimatePresence>
-            </motion.div>
-          )}
-        </div>
-      </motion.header>
-
-      {/* Share Link and Players Panel */}
-      {roomCode && (
-        <div className="absolute left-4 top-20 bg-gray-800/95 backdrop-blur-sm rounded-lg shadow-xl p-4 w-72 border border-gray-700">
-          {/* Share Link Section */}
-          <div className="mb-4 pb-4 border-b border-gray-700">
-            <h3 className="text-white font-semibold mb-2 flex items-center gap-2">
-              <Share2 className="w-4 h-4 text-blue-400" />
-              Invite Link
-            </h3>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={generateInviteLink(roomCode)}
-                readOnly
-                className="bg-gray-900 text-white px-3 py-1.5 rounded flex-1 text-sm font-mono truncate"
-              />
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(generateInviteLink(roomCode));
-                  toast.success('Link copied to clipboard!');
-                }}
-                className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-sm whitespace-nowrap"
+              </motion.button>
+            )}
+            
+            {gameState === 'initial' && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={startGame}
+                className="p-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-md"
+                data-tooltip-id="start-tooltip"
+                data-tooltip-content="Start Game"
               >
-                Copy Link
+                <Play className="w-5 h-5" />
+              </motion.button>
+            )}
+
+            {/* Timer Display */}
+            <div className="flex items-center gap-2 text-white bg-gray-700/80 px-4 py-2 rounded-lg shadow-md">
+              <Clock className="w-4 h-4 text-blue-400" />
+              <span className="font-mono text-lg">{formatTime(timeElapsed)}</span>
+            </div>
+
+            {/* Add Difficulty Bar */}
+            <DifficultyBar
+              selectedDifficulty={selectedDifficulty}
+              onSelect={handleDifficultyChange}
+            />
+
+            {/* Existing game controls */}
+            {gameState !== 'initial' && (
+              <button
+                onClick={togglePause}
+                className="p-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+              >
+                {gameState === 'playing' ? <Pause /> : <Play />}
               </button>
-            </div>
-            <div className="mt-2 text-gray-400 text-xs">
-              Share this link with friends to invite them to your puzzle room
-            </div>
+            )}
           </div>
+        </div>
 
-          {/* Players List Section */}
-          <div>
-            <h3 className="text-white font-semibold mb-2 flex items-center gap-2">
-              <Info className="w-4 h-4 text-blue-400" />
-              Players ({Object.keys(players).length})
-            </h3>
-            <div className="space-y-2">
-              {Object.entries(players).map(([id, player]) => (
-                <div
-                  key={id}
-                  className="flex items-center justify-between bg-gray-700/50 rounded p-2"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${
-                      player.status === PLAYER_STATUS.ONLINE ? 'bg-green-500' :
-                      player.status === PLAYER_STATUS.AWAY ? 'bg-yellow-500' :
-                      'bg-gray-500'
-                    }`} />
-                    <span className="text-white text-sm">{player.name}</span>
-                    {player.isHost && (
-                      <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded">
-                        Host
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-gray-400 text-sm">
-                    {playerScores[id]?.piecesPlaced || 0} pieces
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Score Summary */}
-          {isCompetitive && (
-            <div className="mt-4 pt-4 border-t border-gray-700">
-              <h4 className="text-white font-semibold mb-2">Leaderboard</h4>
-              <div className="space-y-1">
-                {leaderboard.slice(0, 3).map((entry, index) => (
-                  <div
-                    key={entry.id}
-                    className="flex items-center justify-between text-sm"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className={
-                        index === 0 ? 'text-yellow-400' :
-                        index === 1 ? 'text-gray-400' :
-                        'text-amber-700'
-                      }>
-                        #{index + 1}
-                      </span>
-                      <span className="text-white">{entry.name}</span>
-                    </div>
-                    <span className="text-gray-400">{entry.score}</span>
-                  </div>
-                ))}
+        {/* Progress Indicator */}
+        {totalPieces > 0 && (
+          <motion.div 
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="flex items-center gap-4"
+          >
+            <div className="flex flex-col items-end">
+              <div className="text-sm text-gray-400">Progress</div>
+              <div className="text-lg font-bold text-white">
+                {completedPieces} / {totalPieces}
               </div>
             </div>
-          )}
-        </div>
-      )}
+            <div className="w-40 h-3 bg-gray-700 rounded-full overflow-hidden shadow-inner">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${progress}%` }}
+                transition={{ duration: 0.5 }}
+                className="h-full bg-gradient-to-r from-blue-500 to-green-500 relative"
+              >
+                <div className="absolute inset-0 bg-white opacity-20 animate-pulse" />
+              </motion.div>
+            </div>
+            <AnimatePresence>
+              {progress === 100 && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  className="flex items-center gap-2 text-green-400 bg-green-900/30 px-4 py-2 rounded-lg"
+                >
+                  <Check className="w-5 h-5" />
+                  <span className="font-medium">Complete!</span>
+                  <span className="text-green-300 font-mono">{formatTime(timeElapsed)}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </motion.div>
 
-      {/* Enhanced Game Area */}
-      <div className="flex-1 relative">
-        {/* Main Canvas */}
+      {/* Main puzzle area */}
+      <div ref={puzzleContainerRef} className="flex-1 relative">
         <div ref={containerRef} className="w-full h-full" />
 
-        {/* Floating Panels */}
-        <AnimatePresence>
-          {showThumbnail && image && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="absolute left-4 top-20 p-3 bg-gray-800/95 backdrop-blur-sm rounded-xl border border-gray-700/50 shadow-xl"
-            >
-              {/* Reference Image */}
-              <div className="relative group">
-                <img
-                  src={image}
-                  alt="Reference"
-                  className="w-48 h-auto rounded-lg transform transition-transform group-hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity rounded-lg">
-                  <span className="absolute bottom-2 left-2 text-white/90 text-sm font-medium">
-                    Reference Image
-                  </span>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Camera Controls */}
-        <div className="absolute right-4 top-4 flex flex-col gap-2">
+        {/* Camera controls overlay - Enhanced */}
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="absolute right-4 top-4 flex flex-col gap-2"
+        >
           {[
             { icon: <ZoomIn className="w-5 h-5" />, action: handleZoomIn, tooltip: "Zoom In" },
             { icon: <ZoomOut className="w-5 h-5" />, action: handleZoomOut, tooltip: "Zoom Out" },
@@ -2112,41 +1737,61 @@ const PuzzleGame = ({ gameId: propGameId, isMultiPlayer, user }) => {
               {control.icon}
             </motion.button>
           ))}
-        </div>
+        </motion.div>
 
-        {/* Player List for Multiplayer */}
-        {isMultiPlayer && (
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="absolute left-4 top-4 w-64 bg-gray-800/95 backdrop-blur-sm rounded-xl border border-gray-700/50 shadow-xl p-4"
-          >
-            <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
-              <span>Players ({Object.keys(players).length})</span>
-            </h3>
-            <div className="space-y-2">
-              {Object.entries(players).map(([id, player]) => (
-                <PlayerCard
-                  key={id}
-                  player={player}
-                  score={playerScores[id]?.piecesPlaced || 0}
-                  isCurrentPlayer={id === auth.currentUser?.uid}
-                />
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Loading State */}
+        {/* Reference Image Overlay - Enhanced */}
         <AnimatePresence>
-          {loading && <LoadingOverlay />}
+          {showThumbnail && image && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="absolute left-4 top-4 p-2 bg-gray-800/90 backdrop-blur-sm rounded-lg shadow-lg"
+            >
+              <div className="relative group">
+                <img
+                  src={image}
+                  alt="Reference"
+                  className="w-48 h-auto rounded border border-gray-600 transition-transform 
+                           group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent 
+                              opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span className="absolute bottom-2 left-2 text-white text-sm">Reference Image</span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Loading Overlay - Enhanced */}
+        <AnimatePresence>
+          {loading && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 flex items-center justify-center 
+                        bg-gray-900/75 backdrop-blur-sm z-10"
+            >
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent 
+                              rounded-full animate-spin" />
+                <div className="text-xl text-white font-medium">Loading puzzle...</div>
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
 
-      {/* Enhanced Modals */}
+      {/* Tooltips */}
+      <Tooltip id="upload-tooltip" />
+      <Tooltip id="control-tooltip" />
+      <Tooltip id="start-tooltip" />
+
+      {/* Share Modal - Enhanced */}
       <AnimatePresence>
         {showShareModal && (
-          // ...existing share modal with enhanced animations...
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -2197,11 +1842,45 @@ const PuzzleGame = ({ gameId: propGameId, isMultiPlayer, user }) => {
         )}
       </AnimatePresence>
 
-      {/* Tooltips */}
-      <Tooltip id="tooltip" className="z-50" />
+      {/* Add difficulty modal */}
+      {showDifficultyModal && <DifficultyModal />}
+
+      {/* Add to the render section, just before the main puzzle area */}
+      {gameId && (
+        <div className="absolute top-4 left-4 bg-gray-800/90 p-4 rounded-lg">
+          <h3 className="text-white font-bold mb-2">Players</h3>
+          {Object.entries(players).map(([id, player]) => (
+            <div key={id} className="flex items-center gap-2 text-white">
+              <div className="w-2 h-2 rounded-full bg-green-500" />
+              <span>{player.name}</span>
+              <span className="text-gray-400">
+                ({playerScores[id]?.piecesPlaced || 0} pieces)
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add cursor visualization to the main puzzle area */}
+      {Object.entries(otherPlayerCursors).map(([id, cursor]) => (
+        <div
+          key={id}
+          className="absolute w-4 h-4 pointer-events-none transform -translate-x-1/2 -translate-y-1/2"
+          style={{
+            left: `${(cursor.x + 1) * 50}%`,
+            top: `${(-cursor.y + 1) * 50}%`
+          }}
+        >
+          <div className="w-3 h-3 rounded-full bg-blue-500" />
+            <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 whitespace-nowrap text-sm text-white bg-gray-800 px-2 py-1 rounded">
+              {cursor.playerName}          
+            </div>        
+          </div>
+      ))}
     </div>
   );
 };
+}
 
 // 7. Export
 export default PuzzleGame;

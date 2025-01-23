@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
 import Auth from './components/Auth';
@@ -10,8 +10,8 @@ import Leaderboard from './components/Leaderboard';
 import Navbar from './components/Navbar';
 import CustomUserPuzzle from './components/CustomUserPuzzle';
 import CustomCulturalPuzzle from './components/CustomCulturalPuzzle';
-import { useParams } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
+import { Toaster } from 'react-hot-toast';
 
 // Component for multiplayer puzzle view
 const MultiplayerPuzzle = () => {
@@ -114,6 +114,7 @@ const App = () => {
           </Routes>
         </main>
       </div>
+      <Toaster position="top-right" />
     </HashRouter>
   );
 };
