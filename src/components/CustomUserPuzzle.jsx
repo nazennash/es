@@ -463,7 +463,7 @@ const PuzzleGame = () => {
         // Position pieces with proper spacing
         piece.position.x = (x - (gridSize.x - 1) / 2) * pieceSize.x;
         piece.position.y = (y - (gridSize.y - 1) / 2) * pieceSize.y;
-        piece.position.z = 0;
+        // piece.position.z = 0;
   
         piece.userData.originalPosition = piece.position.clone();
         piece.userData.gridPosition = { x, y };
@@ -1348,7 +1348,6 @@ const PuzzleGame = () => {
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent 
                               opacity-0 group-hover:opacity-100 transition-opacity">
-                  <span className="absolute bottom-2 left-2 text-white text-sm">Reference Image</span>
                 </div>
               </div>
             </motion.div>

@@ -157,6 +157,14 @@ class ParticleSystem {
   }
 }
 
+// Define difficulty settings
+const DIFFICULTY_SETTINGS = {
+  easy: { grid: { x: 3, y: 2 }, snapDistance: 0.4, rotationEnabled: false },
+  medium: { grid: { x: 4, y: 3 }, snapDistance: 0.3, rotationEnabled: true },
+  hard: { grid: { x: 5, y: 4 }, snapDistance: 0.2, rotationEnabled: true },
+  expert: { grid: { x: 6, y: 5 }, snapDistance: 0.15, rotationEnabled: true }
+};
+
 const MultiplayerManager = ({ gameId, isHost, user, image }) => {
   const navigate = useNavigate();
   
@@ -190,6 +198,8 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
   });
   const [winner, setWinner] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
+  const [difficulty, setDifficulty] = useState('easy');
+  const [selectedDifficulty, setSelectedDifficulty] = useState(DIFFICULTY_SETTINGS.easy);
 
   // Multiplayer hook
   const {
@@ -364,7 +374,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
       const texture = await new THREE.TextureLoader().loadAsync(imageUrl);
       const aspectRatio = texture.image.width / texture.image.height;
       
-      const gridSize = { x: 4, y: 3 };
+      const gridSize = selectedDifficulty.grid;
       const pieceSize = {
         x: 1 * aspectRatio / gridSize.x,
         y: 1 / gridSize.y
@@ -737,6 +747,26 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
       cameraRef.current.position.set(0, 0, 5);
       controlsRef.current.target.set(0, 0, 0);
       controlsRef.current.update();
+    }
+  };
+
+  const handleDifficultyChange = (newDifficulty) => {
+    if (gameState === 'playing') {
+      const confirmChange = window.confirm('Changing difficulty will reset the current puzzle. Continue?');
+      if (!confirmChange) return;
+    }
+    
+    setSelectedDifficulty(newDifficulty);
+    setDifficulty(newDifficulty.id);
+    if (image) {
+      setLoading(true);
+      createPuzzlePieces(image).then(() => {
+        setLoading(false);
+        setGameState('playing');
+        setCompletedPieces(0);
+        setProgress(0);
+        setTimeElapsed(0);
+      });
     }
   };
 
