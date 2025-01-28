@@ -1,0 +1,1219 @@
+components folder: Auth: import React, { useState, useEffect } from 'react';
+import { auth, googleProvider } from '../firebase';
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  signInWithPopup,
+} from 'firebase/auth';
+
+const Auth = ({ onAuthSuccess }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLogin, setIsLogin] = useState(true);
+  const [message, setMessage] = useState('');
+  const [resetPassword, setResetPassword] = useState(false);
+
+  // Check localStorage on component mount
+  useEffect(() => {
+    const user = localStorage.getItem('authUser');
+    if (user) {
+      onAuthSuccess(JSON.parse(user));
+    }
+  }, [onAuthSuccess]);
+
+  const handleEmailPasswordAuth = async () => {
+    try {
+      let userCredential;
+      if (isLogin) {
+        userCredential = await signInWithEmailAndPassword(auth, email, password);
+        setMessage('Login successful!');
+      } else {
+        userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        setMessage('Sign up successful! Please log in.');
+      }
+
+      const user = userCredential.user;
+      localStorage.setItem('authUser', JSON.stringify(user));
+      onAuthSuccess(user);
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+
+      localStorage.setItem('authUser', JSON.stringify(user));
+      onAuthSuccess(user);
+      setMessage('Google login successful!');
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setMessage('Password reset email sent!');
+      setResetPassword(false); // Hide the password reset form after sending the email
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100">
+      <div className="w-full max-w-sm p-6 bg-white rounded shadow-md">
+        <h2 className="text-2xl font-bold text-center mb-4">
+          {isLogin ? 'Login' : 'Sign Up'}
+        </h2>
+
+        {/* Password reset section */}
+        {resetPassword ? (
+          <div>
+            <h3 className="text-xl font-semibold mb-4">Reset Password</h3>
+            <div className="mb-4">
+              <label htmlFor="email" className="block text-gray-700 mb-1">
+                Email
+              </label>
+              <input
+                type="email"
+                id="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring focus:ring-blue-300"
+                required
+              />
+            </div>
+            <button
+              onClick={handlePasswordReset}
+              className="w-full py-2 px-4 bg-blue-500 text-white font-bold rounded hover:bg-blue-600 transition duration-200"
+            >
+              Send Password Reset Email
+            </button>
+            <div className="text-center mt-4">
+              <button
+                onClick={() => setResetPassword(false)}
+                className="text-gray-700 hover:underline text-sm"
+              >
+                Back to Login
+              </button>
+            </div>
+          </div>
+        ) : (
+          // Login/Sign Up form
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleEmailPasswordAuth();
+            }}
+          >
+            <div className="mb-4">
+              <label htmlFor="email" className="block text-gray-700 mb-1">
+                Email
+              </label>
+              <input
+                type="email"
+                id="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring focus:ring-blue-300"
+                required
+              />
+            </div>
+            <div className="mb-4">
+              <label htmlFor="password" className="block text-gray-700 mb-1">
+                Password
+              </label>
+              <input
+                type="password"
+                id="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring focus:ring-blue-300"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full py-2 px-4 bg-blue-500 text-white font-bold rounded hover:bg-blue-600 transition duration-200"
+            >
+              {isLogin ? 'Login' : 'Sign Up'}
+            </button>
+          </form>
+        )}
+
+        <button
+          onClick={handleGoogleLogin}
+          className="w-full mt-3 py-2 px-4 bg-red-500 text-white font-bold rounded hover:bg-red-600 transition duration-200"
+        >
+          Sign in with Google
+        </button>
+
+        <div className="text-center mt-4">
+          {isLogin ? (
+            <button
+              onClick={() => setResetPassword(true)}
+              className="text-blue-500 hover:underline text-sm"
+            >
+              Forgot password?
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsLogin(true)}
+              className="text-gray-700 hover:underline text-sm"
+            >
+              Already have an account? Login
+            </button>
+          )}
+        </div>
+
+        <div className="text-center mt-4">
+          <button
+            onClick={() => setIsLogin(!isLogin)}
+            className="text-gray-700 hover:underline text-sm"
+          >
+            {isLogin ? 'Don’t have an account? Sign Up' : 'Already have an account? Login'}
+          </button>
+        </div>
+
+        {message && <p className="mt-4 text-center text-red-500">{message}</p>}
+      </div>
+    </div>
+  );
+};
+
+export default Auth; ---- // src/components/CulturalPuzzleSelector.jsx
+import React from 'react';
+import { culturalPuzzles } from '../data/culturalPuzzles';
+
+const CulturalPuzzleSelector = ({ onSelect }) => {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
+      {culturalPuzzles.map(puzzle => (
+        <div
+          key={puzzle.id}
+          className="bg-white rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition-shadow"
+        >
+          <img
+            src={puzzle.thumbnail}
+            alt={puzzle.name}
+            className="w-full h-48 object-cover"
+          />
+          <div className="p-4">
+            <h3 className="text-xl font-bold mb-2">{puzzle.name}</h3>
+            <p className="text-gray-600 mb-4">{puzzle.description}</p>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-500">
+                {puzzle.pieces} pieces • {puzzle.difficulty}
+              </span>
+              <button
+                onClick={() => onSelect(puzzle)}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Start Puzzle
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export default CulturalPuzzleSelector; ----- // src/components/Dashboard.jsx
+import React, { useEffect, useState } from 'react';
+import { getFirestore, collection, query, where, getDocs } from 'firebase/firestore';
+
+const Dashboard = ({ userId }) => {
+  const [completedPuzzles, setCompletedPuzzles] = useState([]);
+  const [savedPuzzles, setSavedPuzzles] = useState([]);
+
+  useEffect(() => {
+    const fetchPuzzles = async () => {
+      const db = getFirestore();
+      
+      // Fetch completed puzzles
+      const completedRef = collection(db, 'completed_puzzles');
+      const completedQuery = query(completedRef, where('userId', '==', userId));
+      const completedSnap = await getDocs(completedQuery);
+      
+      setCompletedPuzzles(
+        completedSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+      );
+      
+      // Fetch saved puzzles
+      const savedRef = collection(db, 'saved_puzzles');
+      const savedQuery = query(savedRef, where('userId', '==', userId));
+      const savedSnap = await getDocs(savedQuery);
+      
+      setSavedPuzzles(
+        savedSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+      );
+    };
+
+    fetchPuzzles();
+  }, [userId]);
+
+  return (
+    <div className="dashboard-container p-6">
+      <h2 className="text-2xl font-bold mb-4">Your Puzzles</h2>
+      
+      <div className="completed-puzzles mb-6">
+        <h3 className="text-xl font-semibold mb-2">Completed Puzzles</h3>
+        <div className="grid grid-cols-3 gap-4">
+          {completedPuzzles.map(puzzle => (
+            <div key={puzzle.id} className="puzzle-card p-4 border rounded">
+              <img src={puzzle.thumbnail} alt={puzzle.name} className="w-full h-32 object-cover mb-2" />
+              <p className="font-medium">{puzzle.name}</p>
+              <p className="text-sm text-gray-600">Completed in: {puzzle.completionTime}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      
+      <div className="saved-puzzles">
+        <h3 className="text-xl font-semibold mb-2">Saved Puzzles</h3>
+        <div className="grid grid-cols-3 gap-4">
+          {savedPuzzles.map(puzzle => (
+            <div key={puzzle.id} className="puzzle-card p-4 border rounded">
+              <img src={puzzle.thumbnail} alt={puzzle.name} className="w-full h-32 object-cover mb-2" />
+              <p className="font-medium">{puzzle.name}</p>
+              <p className="text-sm text-gray-600">Progress: {puzzle.progress}%</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Dashboard; ----- import React, { useState, useEffect } from 'react';
+import { auth } from '../firebase';
+import { useNavigate } from 'react-router-dom';
+import { getFirestore, collection, query, where, getDocs, limit } from 'firebase/firestore';
+
+const Home = ({ user }) => {
+  const navigate = useNavigate();
+  const [recentPuzzles, setRecentPuzzles] = useState([]);
+  const [userStats, setUserStats] = useState({
+    completed: 0,
+    bestTime: null,
+    rank: null
+  });
+  
+  useEffect(() => {
+    const fetchUserData = async () => {
+      const db = getFirestore();
+      
+      // Fetch recent puzzles
+      const puzzlesRef = collection(db, 'completed_puzzles');
+      const puzzlesQuery = query(
+        puzzlesRef,
+        where('userId', '==', user.uid),
+        limit(3)
+      );
+      const puzzleSnap = await getDocs(puzzlesQuery);
+      setRecentPuzzles(puzzleSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })));
+      
+      // Fetch user stats
+      const statsRef = collection(db, 'user_stats');
+      const statsQuery = query(statsRef, where('userId', '==', user.uid));
+      const statsSnap = await getDocs(statsQuery);
+      if (!statsSnap.empty) {
+        setUserStats(statsSnap.docs[0].data());
+      }
+    };
+    
+    fetchUserData();
+  }, [user.uid]);
+
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      localStorage.removeItem('authUser');
+      navigate('/auth');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
+  const handleStartPuzzle = (type) => {
+    switch(type) {
+      case 'custom':
+        navigate('/puzzle/custom');
+        break;
+      case 'cultural':
+        navigate('/puzzle/cultural');
+        break;
+      case 'multiplayer':
+        navigate('/puzzle/multiplayer/new');
+        break;
+      default:
+        break;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100">
+      {/* Header Section */}
+      <div className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">
+                Welcome, {user?.displayName || user?.email}!
+              </h1>
+              <p className="mt-1 text-sm text-gray-500">
+                Ready to solve some puzzles?
+              </p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 transition duration-200"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        {/* Quick Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold text-gray-900">Puzzles Completed</h3>
+            <p className="text-3xl font-bold text-blue-600">{userStats.completed}</p>
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold text-gray-900">Best Time</h3>
+            <p className="text-3xl font-bold text-green-600">
+              {userStats.bestTime ? `${Math.floor(userStats.bestTime / 60)}:${String(userStats.bestTime % 60).padStart(2, '0')}` : '--:--'}
+            </p>
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-lg font-semibold text-gray-900">Global Rank</h3>
+            <p className="text-3xl font-bold text-purple-600">#{userStats.rank || '--'}</p>
+          </div>
+        </div>
+
+        {/* Start New Puzzle Section */}
+        <div className="bg-white rounded-lg shadow mb-8">
+          <div className="p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Start New Puzzle</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <button
+                onClick={() => handleStartPuzzle('custom')}
+                className="flex items-center justify-center p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition duration-200"
+              >
+                <div className="text-center">
+                  <div className="text-blue-600 font-semibold">Custom Photo Puzzle</div>
+                  <div className="text-sm text-gray-600">Upload your own image</div>
+                </div>
+              </button>
+              <button
+                onClick={() => handleStartPuzzle('cultural')}
+                className="flex items-center justify-center p-4 bg-green-50 rounded-lg hover:bg-green-100 transition duration-200"
+              >
+                <div className="text-center">
+                  <div className="text-green-600 font-semibold">Cultural Themes</div>
+                  <div className="text-sm text-gray-600">Explore pre-designed puzzles</div>
+                </div>
+              </button>
+              <button
+                onClick={() => handleStartPuzzle('multiplayer')}
+                className="flex items-center justify-center p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition duration-200"
+              >
+                <div className="text-center">
+                  <div className="text-purple-600 font-semibold">Multiplayer</div>
+                  <div className="text-sm text-gray-600">Solve with friends</div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Recent Puzzles */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Recent Puzzles</h2>
+            {recentPuzzles.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {recentPuzzles.map(puzzle => (
+                  <div key={puzzle.id} className="border rounded-lg p-4">
+                    <img 
+                      src={puzzle.thumbnail} 
+                      alt={puzzle.name} 
+                      className="w-full h-32 object-cover rounded mb-2"
+                    />
+                    <h3 className="font-semibold">{puzzle.name}</h3>
+                    <p className="text-sm text-gray-600">
+                      Completed in {Math.floor(puzzle.completionTime / 60)}:
+                      {String(puzzle.completionTime % 60).padStart(2, '0')}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-600">No puzzles completed yet. Start solving!</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Home;  Leaderboard: import React, { useState, useEffect } from 'react';
+import { getFirestore, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+
+const Leaderboard = ({ puzzleId }) => {
+  const [scores, setScores] = useState([]);
+
+  useEffect(() => {
+    const fetchScores = async () => {
+      const db = getFirestore();
+      const scoresRef = collection(db, 'puzzle_scores');
+      const scoresQuery = query(
+        scoresRef,
+        where('puzzleId', '==', puzzleId),
+        orderBy('completionTime'),
+        limit(10)
+      );
+      
+      const scoresSnap = await getDocs(scoresQuery);
+      setScores(
+        scoresSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+      );
+    };
+
+    fetchScores();
+  }, [puzzleId]);
+
+  return (
+    <div className="leaderboard p-4">
+      <h3 className="text-xl font-bold mb-4">Top Times</h3>
+      <div className="space-y-2">
+        {scores.map((score, index) => (
+          <div key={score.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+            <span className="font-medium">#{index + 1} {score.playerName}</span>
+            <span>{Math.floor(score.completionTime / 60)}:{score.completionTime % 60}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export default Leaderboard; Multiplayer: // src/components/MultiplayerManager.jsx
+import React, { useEffect, useState } from 'react';
+import { io } from 'socket.io-client';
+import { getDatabase, ref, onValue, set } from 'firebase/database';
+import { generateInviteLink } from '../utils/inviteHelper';
+
+const MultiplayerManager = ({ puzzleId, isHost, onPieceMove, onPlayerJoin }) => {
+  const [socket, setSocket] = useState(null);
+  const [players, setPlayers] = useState([]);
+  const [inviteLink, setInviteLink] = useState('');
+
+  useEffect(() => {
+    // Set up Firebase Realtime Database for puzzle state
+    const db = getDatabase();
+    const puzzleRef = ref(db, `puzzles/${puzzleId}`);
+
+    // Set up Socket.IO connection
+    const newSocket = io(process.env.REACT_APP_SOCKET_SERVER);
+    setSocket(newSocket);
+
+    if (isHost) {
+      // Create new puzzle session
+      const link = generateInviteLink(puzzleId);
+      setInviteLink(link);
+      
+      // Initialize puzzle state
+      set(puzzleRef, {
+        pieces: [],
+        players: [],
+        status: 'active'
+      });
+    }
+
+    // Listen for player movements
+    newSocket.on('piece-moved', (data) => {
+      onPieceMove(data.pieceId, data.position, data.rotation);
+    });
+
+    // Listen for player joins
+    newSocket.on('player-joined', (player) => {
+      setPlayers(prev => [...prev, player]);
+      onPlayerJoin(player);
+    });
+
+    return () => {
+      newSocket.disconnect();
+    };
+  }, [puzzleId, isHost]);
+
+  const movePiece = (pieceId, position, rotation) => {
+    socket.emit('move-piece', {
+      puzzleId,
+      pieceId,
+      position,
+      rotation
+    });
+  };
+
+  return (
+    <div className="multiplayer-container">
+      {isHost && (
+        <div className="invite-section p-4 bg-white rounded-lg shadow mb-4">
+          <h3 className="text-lg font-semibold mb-2">Invite Players</h3>
+          <div className="flex items-center space-x-2">
+            <input
+              type="text"
+              value={inviteLink}
+              readOnly
+              className="flex-1 p-2 border rounded"
+            />
+            <button
+              onClick={() => navigator.clipboard.writeText(inviteLink)}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Copy
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="players-list p-4 bg-white rounded-lg shadow">
+        <h3 className="text-lg font-semibold mb-2">Current Players</h3>
+        <div className="space-y-2">
+          {players.map(player => (
+            <div
+              key={player.id}
+              className="flex items-center space-x-2 p-2 bg-gray-50 rounded"
+            >
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: player.color }}
+              />
+              <span>{player.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default MultiplayerManager; Navbar: import React from 'react';
+import { Link } from 'react-router-dom';
+
+const Navbar = ({ user }) => {
+  return (
+    <nav className="navbar">
+      <div className="navbar-brand">
+        <Link to="/">Puzzle App</Link>
+      </div>
+      <div className="navbar-links">
+        <Link to="/dashboard">Dashboard</Link>
+        <Link to="/leaderboard">Leaderboard</Link>
+      </div>
+      <div className="navbar-user">
+        {user ? (
+          <span>{user.email}</span>
+        ) : (
+          <Link to="/auth">Login</Link>
+        )}
+      </div>
+    </nav>
+  );
+};
+
+export default Navbar;  --- // src/components/PrivateRoute.jsx
+import React from 'react';
+import { Navigate } from 'react-router-dom';
+import { auth } from '../firebase';
+
+const PrivateRoute = ({ element: Component, ...rest }) => {
+  const isAuthenticated = auth.currentUser || localStorage.getItem('authUser');
+  
+  return isAuthenticated ? (
+    <Component {...rest} />
+  ) : (
+    <Navigate to="/auth" replace />
+  );
+};
+
+export default PrivateRoute;  // src/components/ProgressTracker.jsx
+import React, { useState, useEffect } from 'react';
+import { Line } from 'recharts';
+
+const ProgressTracker = ({ completedPieces, totalPieces }) => {
+  const [progress, setProgress] = useState(0);
+  const [timeElapsed, setTimeElapsed] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeElapsed(prev => prev + 1);
+    }, 1000);
+    
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    setProgress((completedPieces / totalPieces) * 100);
+  }, [completedPieces, totalPieces]);
+
+  return (
+    <div className="progress-container">
+      <div className="progress-bar w-full bg-gray-200 rounded">
+        <div 
+          className="bg-blue-600 rounded h-2 transition-all duration-300"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="timer mt-2">
+        Time: {Math.floor(timeElapsed / 60)}:{timeElapsed % 60}
+      </div>
+    </div>
+  );
+};
+
+export default ProgressTracker;  --- // src/components/PuzzleImageUploader.jsx
+import React, { useState } from 'react';
+import { storage } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+
+const PuzzleImageUploader = ({ onImageProcessed }) => {
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  const processImage = async (file) => {
+    setUploading(true);
+    try {
+      const storageRef = ref(storage, `puzzle-images/${Date.now()}-${file.name}`);
+      await uploadBytes(storageRef, file);
+      const imageUrl = await getDownloadURL(storageRef);
+      
+      // Process image and create 3D model
+      const imageData = await createImageData(file);
+      const modelData = await generate3DModel(imageData);
+      
+      onImageProcessed({
+        imageUrl,
+        modelData,
+        dimensions: { width: imageData.width, height: imageData.height }
+      });
+    } catch (error) {
+      console.error('Error processing image:', error);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const createImageData = async (file) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      const img = new Image();
+      
+      reader.onload = (e) => {
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+          
+          resolve({
+            data: ctx.getImageData(0, 0, img.width, img.height),
+            width: img.width,
+            height: img.height
+          });
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  return (
+    <div className="upload-container p-6 bg-white rounded-lg shadow">
+      <input
+        type="file"
+        accept="image/*"
+        onChange={(e) => processImage(e.target.files[0])}
+        className="hidden"
+        id="image-upload"
+      />
+      <label
+        htmlFor="image-upload"
+        className="block w-full p-4 text-center border-2 border-dashed border-gray-300 rounded cursor-pointer hover:border-blue-500 transition-colors"
+      >
+        {uploading ? (
+          <div className="space-y-2">
+            <div className="loading-spinner"></div>
+            <p>Processing image... {progress}%</p>
+          </div>
+        ) : (
+          <p>Click or drag image here to upload</p>
+        )}
+      </label>
+    </div>
+  );
+};
+
+export default PuzzleImageUploader;   ---- // src/components/PuzzlePieceManager.jsx
+import React, { useEffect, useRef } from 'react';
+import * as THREE from 'three';
+import { DragControls } from 'three/examples/jsm/controls/DragControls';
+
+export class PuzzlePiece {
+  constructor(geometry, material, position, originalPosition) {
+    this.mesh = new THREE.Mesh(geometry, material);
+    this.mesh.position.copy(position);
+    this.originalPosition = originalPosition;
+    this.isPlaced = false;
+  }
+
+  isNearOriginalPosition() {
+    const distance = this.mesh.position.distanceTo(this.originalPosition);
+    return distance < 0.5; // Threshold for snapping
+  }
+
+  snapToPosition() {
+    this.mesh.position.copy(this.originalPosition);
+    this.isPlaced = true;
+  }
+}
+
+const PuzzlePieceManager = ({ imageUrl, difficulty = 3, onPiecePlace }) => {
+  const containerRef = useRef(null);
+  const piecesRef = useRef([]);
+  const controlsRef = useRef(null);
+
+  useEffect(() => {
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    
+    // Create puzzle pieces from image
+    const createPuzzlePieces = async () => {
+      const texture = await new THREE.TextureLoader().loadAsync(imageUrl);
+      const aspectRatio = texture.image.width / texture.image.height;
+      
+      // Calculate piece dimensions
+      const pieceWidth = 1 / difficulty;
+      const pieceHeight = (1 / difficulty) * aspectRatio;
+      
+      // Create pieces with bas-relief effect
+      for (let i = 0; i < difficulty; i++) {
+        for (let j = 0; j < difficulty; j++) {
+          // Create geometry with height variation for bas-relief
+          const geometry = new THREE.PlaneGeometry(pieceWidth, pieceHeight, 10, 10);
+          const heightMap = generateHeightMap(texture, i, j, difficulty);
+          applyHeightMap(geometry, heightMap);
+          
+          // Create textured material
+          const material = new THREE.MeshPhongMaterial({
+            map: texture,
+            bumpMap: texture,
+            bumpScale: 0.1,
+          });
+          
+          // Calculate positions
+          const originalPosition = new THREE.Vector3(
+            (i - difficulty / 2) * pieceWidth,
+            (j - difficulty / 2) * pieceHeight,
+            0
+          );
+          
+          // Create piece with random initial position
+          const randomPosition = new THREE.Vector3(
+            Math.random() * 2 - 1,
+            Math.random() * 2 - 1,
+            0
+          );
+          
+          const piece = new PuzzlePiece(geometry, material, randomPosition, originalPosition);
+          piecesRef.current.push(piece);
+          scene.add(piece.mesh);
+        }
+      }
+    };
+
+    // Set up drag controls
+    const setupDragControls = () => {
+      const pieces = piecesRef.current.map(piece => piece.mesh);
+      controlsRef.current = new DragControls(pieces, camera, renderer.domElement);
+      
+      controlsRef.current.addEventListener('dragstart', () => {
+        orbitControls.enabled = false;
+      });
+      
+      controlsRef.current.addEventListener('dragend', (event) => {
+        orbitControls.enabled = true;
+        const piece = piecesRef.current.find(p => p.mesh === event.object);
+        
+        if (piece && piece.isNearOriginalPosition()) {
+          piece.snapToPosition();
+          onPiecePlace();
+          
+          // Animate piece placement
+          const flashMaterial = piece.mesh.material.clone();
+          piece.mesh.material = flashMaterial;
+          flashMaterial.emissive.setHex(0x00ff00);
+          setTimeout(() => {
+            flashMaterial.emissive.setHex(0x000000);
+          }, 300);
+        }
+      });
+    };
+
+    // Initialize scene
+    const init = async () => {
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      containerRef.current.appendChild(renderer.domElement);
+      
+      camera.position.z = 5;
+      
+      // Add lights
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+      scene.add(ambientLight);
+      
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+      directionalLight.position.set(5, 5, 5);
+      scene.add(directionalLight);
+      
+      await createPuzzlePieces();
+      setupDragControls();
+      
+      // Animation loop
+      const animate = () => {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+      };
+      animate();
+    };
+
+    init();
+
+    return () => {
+      containerRef.current?.removeChild(renderer.domElement);
+      piecesRef.current = [];
+    };
+  }, [imageUrl, difficulty, onPiecePlace]);
+
+  return <div ref={containerRef} />;
+};
+
+// Helper functions
+const generateHeightMap = (texture, x, y, difficulty) => {
+  // Implementation of height map generation based on image intensity
+  // This creates the bas-relief effect
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  // ... height map generation logic
+  return new Float32Array(/* height data */);
+};
+
+const applyHeightMap = (geometry, heightMap) => {
+  // Apply height map to geometry vertices
+  const positions = geometry.attributes.position.array;
+  for (let i = 0; i < positions.length; i += 3) {
+    positions[i + 2] = heightMap[i / 3] * 0.1; // Z-axis modification
+  }
+  geometry.attributes.position.needsUpdate = true;
+};
+
+export default PuzzlePieceManager; data folder - culturalPuzzle: // src/data/culturalPuzzles.js
+export const culturalPuzzles = [
+    {
+      id: 'african-pyramids',
+      name: 'Great Pyramids of Giza',
+      description: 'Experience the majesty of ancient Egyptian architecture',
+      difficulty: 'medium',
+      pieces: 16,
+      modelUrl: '/models/pyramids.glb',
+      thumbnail: '/images/pyramids-thumb.jpg',
+      category: 'monuments'
+    },
+    {
+      id: 'elephant-savanna',
+      name: 'African Elephant',
+      description: 'Majestic elephant in its natural habitat',
+      difficulty: 'hard',
+      pieces: 25,
+      modelUrl: '/models/elephant.glb',
+      thumbnail: '/images/elephant-thumb.jpg',
+      category: 'wildlife'
+    },
+    {
+      id: 'tribal-mask',
+      name: 'Traditional African Mask',
+      description: 'Intricate tribal mask with cultural significance',
+      difficulty: 'medium',
+      pieces: 16,
+      modelUrl: '/models/mask.glb',
+      thumbnail: '/images/mask-thumb.jpg',
+      category: 'art'
+    }
+  ];   utils: inviteHelper: export const generateInviteLink = (puzzleId) => {
+  const baseUrl = window.location.origin;
+  return `${baseUrl}/puzzle/multiplayer/${puzzleId}`;
+};  modelGenerator: // src/utils/modelGenerator.js
+import * as THREE from 'three';
+
+export const generate3DModel = (imageData) => {
+  return new Promise((resolve) => {
+    const { data, width, height } = imageData;
+    const geometry = new THREE.PlaneGeometry(1, height / width, 32, 32);
+    
+    // Generate height map from image brightness
+    const heightMap = new Float32Array(width * height);
+    for (let i = 0; i < data.data.length; i += 4) {
+      const brightness = (data.data[i] + data.data[i + 1] + data.data[i + 2]) / 3;
+      heightMap[i / 4] = brightness / 255;
+    }
+    
+    // Apply height map to geometry
+    const positions = geometry.attributes.position.array;
+    for (let i = 0; i < positions.length; i += 3) {
+      const index = Math.floor(i / 3);
+      positions[i + 2] = heightMap[index] * 0.1;
+    }
+    geometry.attributes.position.needsUpdate = true;
+    
+    resolve(geometry);
+  });
+};
+
+export const generatePuzzlePieces = (geometry, difficulty) => {
+  const pieces = [];
+  const segmentsX = difficulty;
+  const segmentsY = difficulty;
+  
+  for (let i = 0; i < segmentsX; i++) {
+    for (let j = 0; j < segmentsY; j++) {
+      const pieceGeometry = geometry.clone();
+      // Cut out piece from original geometry
+      const bounds = {
+        x: { min: i / segmentsX, max: (i + 1) / segmentsX },
+        y: { min: j / segmentsY, max: (j + 1) / segmentsY }
+      };
+      
+      // Apply jigsaw-like edges
+      applyJigsawEdges(pieceGeometry, bounds, i, j, segmentsX, segmentsY);
+      pieces.push({
+        geometry: pieceGeometry,
+        originalPosition: new THREE.Vector3(
+          (i - segmentsX / 2) / segmentsX,
+          (j - segmentsY / 2) / segmentsY,
+          0
+        )
+      });
+    }
+  }
+  
+  return pieces;
+};
+
+const applyJigsawEdges = (geometry, bounds, i, j, segmentsX, segmentsY) => {
+  // Implementation of jigsaw edge generation
+  // This creates interlocking pieces
+  const positions = geometry.attributes.position.array;
+  const uvs = geometry.attributes.uv.array;
+  
+  // Add connector shapes to edges
+  if (i < segmentsX - 1) addHorizontalConnector(positions, bounds, true);
+  if (j < segmentsY - 1) addVerticalConnector(positions, bounds, true);
+  if (i > 0) addHorizontalConnector(positions, bounds, false);
+  if (j > 0) addVerticalConnector(positions, bounds, false);
+  
+  geometry.attributes.position.needsUpdate = true;
+  geometry.attributes.uv.needsUpdate = true;
+}; App.jsx: // src/App.jsx
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from './firebase';
+import Auth from './components/Auth';
+import Home from './components/Home';
+import PrivateRoute from './components/PrivateRoute';
+import Dashboard from './components/Dashboard';
+import PuzzleViewer from './components/PuzzleViewer';
+import MultiplayerManager from './components/MultiplayerManager';
+import Leaderboard from './components/Leaderboard';
+import Navbar from './components/Navbar';
+const App = () => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUser(user);
+        localStorage.setItem('authUser', JSON.stringify(user));
+      } else {
+        setUser(null);
+        localStorage.removeItem('authUser');
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Pre-defined cultural theme puzzles
+  const culturalPuzzles = [
+    {
+      id: 'african-pyramids',
+      name: 'African Pyramids',
+      thumbnail: '/assets/pyramids-thumb.jpg',
+      modelUrl: '/assets/pyramids-3d.glb'
+    },
+    {
+      id: 'elephant',
+      name: 'African Elephant',
+      thumbnail: '/assets/elephant-thumb.jpg',
+      modelUrl: '/assets/elephant-3d.glb'
+    },
+    {
+      id: 'mask',
+      name: 'Traditional Mask',
+      thumbnail: '/assets/mask-thumb.jpg',
+      modelUrl: '/assets/mask-3d.glb'
+    }
+  ];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  return (
+    <Router>
+      <div className="App">
+        {user && <Navbar user={user} />}
+        <Routes>
+          <Route 
+            path="/" 
+            element={
+              user ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <Navigate to="/auth" replace />
+              )
+            } 
+          />
+          <Route 
+            path="/auth" 
+            element={user ? <Navigate to="/dashboard" replace /> : <Auth />} 
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <PrivateRoute 
+                element={() => (
+                  <Dashboard 
+                    user={user} 
+                    culturalPuzzles={culturalPuzzles}
+                  />
+                )} 
+              />
+            }
+          />
+          <Route
+            path="/puzzle/custom"
+            element={
+              <PrivateRoute 
+                element={() => (
+                  <div className="puzzle-container">
+                    <PuzzleViewer />
+                    <MultiplayerManager puzzleId="custom" />
+                    <Leaderboard puzzleId="custom" />
+                  </div>
+                )} 
+              />
+            }
+          />
+          <Route
+            path="/puzzle/cultural/:id"
+            element={
+              <PrivateRoute 
+                element={({ params }) => {
+                  const puzzle = culturalPuzzles.find(p => p.id === params.id);
+                  return (
+                    <div className="puzzle-container">
+                      <PuzzleViewer 
+                        modelUrl={puzzle.modelUrl}
+                        isPredesigned={true}
+                      />
+                      <MultiplayerManager puzzleId={params.id} />
+                      <Leaderboard puzzleId={params.id} />
+                    </div>
+                  );
+                }} 
+              />
+            }
+          />
+          <Route
+            path="/puzzle/multiplayer/:sessionId"
+            element={
+              <PrivateRoute 
+                element={({ params }) => (
+                  <div className="puzzle-container">
+                    <PuzzleViewer isMultiPlayer={true} />
+                    <MultiplayerManager 
+                      puzzleId={params.sessionId}
+                      isHost={false}
+                    />
+                  </div>
+                )} 
+              />
+            }
+          />
+          <Route
+            path="/leaderboard"
+            element={
+              <PrivateRoute 
+                element={() => (
+                  <div className="leaderboard-container">
+                    <h2 className="text-2xl font-bold mb-4">Global Leaderboard</h2>
+                    {culturalPuzzles.map(puzzle => (
+                      <div key={puzzle.id} className="mb-6">
+                        <h3 className="text-xl font-semibold mb-2">{puzzle.name}</h3>
+                        <Leaderboard puzzleId={puzzle.id} />
+                      </div>
+                    ))}
+                  </div>
+                )} 
+              />
+            }
+          />
+        </Routes>
+      </div>
+    </Router>
+  );
+};
+
+export default App;
