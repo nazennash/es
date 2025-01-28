@@ -476,8 +476,32 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
       points: finalPoints,
       timestamp: endTime
     };
+    
 
     setWinner(finalScore);
+
+    // const completionData = {
+    //   puzzleId: `custom_${Date.now()}`,
+    //   userId: auth.currentUser.uid,
+    //   playerName: auth.currentUser.email || 'Anonymous',
+    //   startTime: startTime,
+    //   difficulty,
+    //   imageUrl: image,
+    //   timer: timeElapsed,
+    // };
+
+
+    const completionData = {
+      puzzleId: `custom_${Date.now()}`,
+      userId: user.uid,
+      playerName: user.displayName || user.email,
+      startTime: gameStats.startTime,
+      difficulty,
+      imageUrl: image,
+      timer: completionTime,
+    };
+
+    console.log(completionData);
 
     // Update game state for all players
     await updateGameState({

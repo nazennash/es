@@ -310,6 +310,7 @@ const Home = ({ user }) => {
                       src={puzzle.thumbnail} 
                       alt="Puzzle thumbnail" 
                       className="w-full h-32 object-contain rounded mb-2"
+                      // className="w-full h-32 object-contain rounded mb-2"
                       loading="lazy"
                     />
                     <h3 className="font-semibold">{puzzle.name || 'Puzzle'}</h3>

@@ -13,6 +13,7 @@ import { ref, update, getDatabase } from 'firebase/database';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tooltip } from 'react-tooltip';
 import DifficultyBar, { difficulties } from './DifficultyBar';
+import { handlePuzzleCompletion, isPuzzleComplete } from './PuzzleCompletionHandler';
 
 // 2. Constants
 const DIFFICULTY_SETTINGS = {
@@ -896,7 +897,7 @@ const PuzzleGame = () => {
   };
 
   // Add this function inside the component
-  // const handlePuzzleCompletion = async (puzzleData) => {
+  // const handlePuzzleCompletionCustom = async (puzzleData) => {
   //   if (!auth.currentUser) return;
     
   //   try {
@@ -913,21 +914,35 @@ const PuzzleGame = () => {
   // Modify the completion effect
   useEffect(() => {
     if (progress === 100 && auth?.currentUser) {
+      // const completionData = {
+      //   puzzleId: `custom_${Date.now()}`,
+      //   userId: auth.currentUser.uid,
+      //   playerName: auth.currentUser.email || 'Anonymous',
+      //   startTime,
+      //   difficulty,
+      //   imageUrl: image,
+      //   timer: timeElapsed,
+      //   completedAt: new Date(),
+      //   totalPieces,
+      //   completedPieces
+      // };
+
       const completionData = {
         puzzleId: `custom_${Date.now()}`,
         userId: auth.currentUser.uid,
-        playerName: auth.currentUser.displayName || 'Anonymous',
-        startTime,
+        playerName: auth.currentUser.email || 'Anonymous',
+        startTime: startTime,
         difficulty,
         imageUrl: image,
         timer: timeElapsed,
-        completedAt: new Date(),
-        totalPieces,
-        completedPieces
       };
-      
-      console.log('Puzzle Completion Data:', completionData);
+
+      console.log('Data sent to handlePuzzleCompletion:', completionData);
       handlePuzzleCompletion(completionData);
+      // await handlePuzzleCompletion(completionData);
+      
+      // console.log('Puzzle Completion Data:', completionData);
+      // handlePuzzleCompletionCustom(completionData);
       
       // Log achievement data
       const achievements = checkAchievements();
@@ -952,7 +967,7 @@ const PuzzleGame = () => {
       console.log('Starting synchronous completion process...');
       
       // Wait for puzzle completion
-      await handlePuzzleCompletion({
+      await handlePuzzleCompletionCustom({
         puzzleId: `custom_${Date.now()}`,
         userId: auth?.currentUser?.uid,
         playerName: auth?.currentUser?.displayName || 'Anonymous',
@@ -1047,7 +1062,7 @@ const PuzzleGame = () => {
   };
 
   // Modify puzzle completion handler
-  const handlePuzzleCompletion = async () => {
+  const handlePuzzleCompletionCustom = async () => {
     if (!auth.currentUser) return;
     
     const achievements = checkAchievements();
