@@ -6,13 +6,11 @@ import {
   where, 
   orderBy, 
   getDocs,
-  doc,
-  getDoc,
   startAfter,
   limit
 } from 'firebase/firestore';
 import { getDatabase, ref, get } from 'firebase/database';
-import { ChevronUp, ChevronDown, Filter, Search, Info, Loader } from 'lucide-react';
+import { ChevronUp, ChevronDown, Filter, Search, Loader } from 'lucide-react';
 
 // Constants
 const ITEMS_PER_PAGE = 20;
@@ -37,33 +35,38 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// Memoized Components
-const StatCard = memo(({ title, value, subtitle, className = '' }) => (
-  <div className={`rounded-lg shadow p-6 ${className}`}>
-    <h3 className="text-lg font-semibold mb-4">{title}</h3>
-    <p className="text-3xl font-bold text-blue-600">{value}</p>
-    <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
-  </div>
+// Memoized Table Header Component
+const TableHeader = memo(({ onSort, sortConfig, darkMode }) => (
+  <thead className={`sticky top-0 z-10 ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+    <tr>
+      <th className="px-4 py-3 text-left font-medium text-gray-600">Preview</th>
+      <th className="px-4 py-3 text-left font-medium text-gray-600">Puzzle</th>
+      <th className="px-4 py-3 text-left font-medium text-gray-600">Difficulty</th>
+      <th 
+        className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer"
+        onClick={() => onSort('bestTime')}
+      >
+        Time {sortConfig.field === 'bestTime' && (
+          sortConfig.direction === 'asc' ? 
+            <ChevronUp className="inline w-4 h-4" /> : 
+            <ChevronDown className="inline w-4 h-4" />
+        )}
+      </th>
+      <th 
+        className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer"
+        onClick={() => onSort('timestamp')}
+      >
+        Completed {sortConfig.field === 'timestamp' && (
+          sortConfig.direction === 'asc' ? 
+            <ChevronUp className="inline w-4 h-4" /> : 
+            <ChevronDown className="inline w-4 h-4" />
+        )}
+      </th>
+    </tr>
+  </thead>
 ));
 
-const DifficultyChart = memo(({ breakdown, darkMode }) => (
-  <div className={`rounded-lg shadow p-6 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
-    <h3 className="text-lg font-semibold mb-4">Difficulty Split</h3>
-    <div className="space-y-2">
-      {Object.entries(breakdown).map(([difficulty, count]) => (
-        <div key={difficulty} className="flex justify-between items-center">
-          <span className={`px-2 py-1 rounded-full text-xs ${
-            difficulty === '3' ? 'bg-green-100 text-green-800' :
-            difficulty === '4' ? 'bg-yellow-100 text-yellow-800' :
-            'bg-red-100 text-red-800'
-          }`}>{difficulty}x{difficulty}</span>
-          <span className="font-medium">{count}</span>
-        </div>
-      ))}
-    </div>
-  </div>
-));
-
+// Memoized Filter Controls Component
 const FilterControls = memo(({ 
   selectedDifficulty, 
   setSelectedDifficulty, 
@@ -99,34 +102,38 @@ const FilterControls = memo(({
   </div>
 ));
 
-const TableHeader = memo(({ onSort, sortConfig, darkMode }) => (
-  <thead className={`sticky top-0 z-10 ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
-    <tr>
-      <th className="px-4 py-3 text-left font-medium text-gray-600">Preview</th>
-      <th className="px-4 py-3 text-left font-medium text-gray-600">Puzzle</th>
-      <th className="px-4 py-3 text-left font-medium text-gray-600">Difficulty</th>
-      <th 
-        className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer"
-        onClick={() => onSort('bestTime')}
-      >
-        Time {sortConfig.field === 'bestTime' && (
-          sortConfig.direction === 'asc' ? 
-            <ChevronUp className="inline w-4 h-4" /> : 
-            <ChevronDown className="inline w-4 h-4" />
-        )}
-      </th>
-      <th 
-        className="px-4 py-3 text-left font-medium text-gray-600 cursor-pointer"
-        onClick={() => onSort('timestamp')}
-      >
-        Completed {sortConfig.field === 'timestamp' && (
-          sortConfig.direction === 'asc' ? 
-            <ChevronUp className="inline w-4 h-4" /> : 
-            <ChevronDown className="inline w-4 h-4" />
-        )}
-      </th>
-    </tr>
-  </thead>
+// Memoized Table Row Component
+const TableRow = memo(({ puzzle, formatTime, getDifficultyStyle, darkMode }) => (
+  <tr className={`hover:${darkMode ? 'bg-gray-700' : 'bg-gray-50'} transition-colors`}>
+    <td className="px-4 py-3">
+      <img 
+        src={puzzle.thumbnail} 
+        alt={puzzle.name}
+        className="w-12 h-12 rounded object-cover"
+        loading="lazy"
+        fetchPriority="low"
+      />
+    </td>
+    <td className="px-4 py-3 font-medium">{puzzle.name}</td>
+    <td className="px-4 py-3">
+      <span className={`px-2 py-1 rounded-full text-xs ${getDifficultyStyle(puzzle.difficulty)}`}>
+        {puzzle.difficulty}x{puzzle.difficulty}
+      </span>
+    </td>
+    <td className="px-4 py-3">
+      {puzzle.bestTime ? formatTime(puzzle.bestTime) : '--:--'}
+    </td>
+    <td className="px-4 py-3">
+      {new Date(puzzle.timestamp).toLocaleDateString()}
+    </td>
+  </tr>
+));
+
+// Loading Indicator Component
+const LoadingIndicator = memo(() => (
+  <div className="flex justify-center p-4">
+    <Loader className="w-6 h-6 animate-spin" />
+  </div>
 ));
 
 // Main Component
@@ -138,13 +145,6 @@ const UserStats = ({ userId }) => {
     error: null,
     lastDoc: null,
     hasMore: true
-  });
-  const [summaryStats, setSummaryStats] = useState({
-    totalCompleted: 0,
-    bestTime: null,
-    averageTime: null,
-    completionRate: null,
-    difficultyBreakdown: {},
   });
   const [selectedDifficulty, setSelectedDifficulty] = useState('all');
   const [sortConfig, setSortConfig] = useState({ field: 'timestamp', direction: 'desc' });
@@ -161,9 +161,7 @@ const UserStats = ({ userId }) => {
 
     const cacheKey = `${userId}-${lastVisible?.id || 'initial'}-${selectedDifficulty}-${searchQuery}`;
     if (cache.has(cacheKey) && !lastVisible) {
-      const cachedData = cache.get(cacheKey);
-      setData(cachedData.data);
-      setSummaryStats(cachedData.summaryStats);
+      setData(cache.get(cacheKey));
       return;
     }
 
@@ -180,18 +178,18 @@ const UserStats = ({ userId }) => {
         limit(ITEMS_PER_PAGE)
       );
 
+      // Add pagination if not first page
       if (lastVisible) {
         puzzlesQuery = query(puzzlesQuery, startAfter(lastVisible));
       }
 
-      // Fetch user stats in parallel with other queries
-      const [completedSnap, gamesSnap, userStatsSnap] = await Promise.all([
+      // Fetch data in parallel
+      const [completedSnap, gamesSnap] = await Promise.all([
         getDocs(puzzlesQuery),
-        !lastVisible ? get(ref(rtdb, 'games')) : Promise.resolve(null),
-        !lastVisible ? getDoc(doc(collection(db, 'user_stats'), userId)) : Promise.resolve(null)
+        !lastVisible ? get(ref(rtdb, 'games')) : Promise.resolve(null)
       ]);
 
-      // Process completed puzzles
+      // Process completed puzzles with optimized mapping
       const completedResults = completedSnap.docs.map(doc => {
         const data = doc.data();
         return {
@@ -219,30 +217,6 @@ const UserStats = ({ userId }) => {
           }));
       }
 
-      // Calculate statistics only on first load
-      let newSummaryStats = summaryStats;
-      if (!lastVisible) {
-        const difficultyBreakdown = completedResults.reduce((acc, puzzle) => {
-          acc[puzzle.difficulty] = (acc[puzzle.difficulty] || 0) + 1;
-          return acc;
-        }, {});
-
-        const totalTime = completedResults.reduce((sum, puzzle) => sum + (puzzle.bestTime || 0), 0);
-        const averageTime = completedResults.length ? Math.round(totalTime / completedResults.length) : null;
-        const completionRate = currentResults.length + completedResults.length > 0
-          ? (completedResults.length / (currentResults.length + completedResults.length) * 100).toFixed(1)
-          : 0;
-
-        newSummaryStats = {
-          totalCompleted: userStatsSnap?.exists() ? userStatsSnap.data().completed || 0 : 0,
-          bestTime: userStatsSnap?.exists() ? userStatsSnap.data().bestTime : null,
-          averageTime,
-          completionRate,
-          difficultyBreakdown,
-        };
-        setSummaryStats(newSummaryStats);
-      }
-
       const newData = {
         completedPuzzles: lastVisible ? 
           [...data.completedPuzzles, ...completedResults] : 
@@ -255,12 +229,8 @@ const UserStats = ({ userId }) => {
       };
 
       setData(newData);
-      
       if (!lastVisible) {
-        cache.set(cacheKey, {
-          data: newData,
-          summaryStats: newSummaryStats
-        });
+        cache.set(cacheKey, newData);
       }
     } catch (err) {
       console.error('Error fetching user data:', err);
@@ -306,11 +276,8 @@ const UserStats = ({ userId }) => {
   const formatTime = useCallback((seconds) => {
     if (seconds == null) return '--:--';
     const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = String(Math.floor(seconds % 60)).padStart(2, '0');
-    const milliseconds = String(seconds).includes('.') ? 
-      `.${String(seconds).split('.')[1].padEnd(3, '0').slice(0, 2)}` : 
-      '';
-    return `${minutes}:${remainingSeconds}${milliseconds}`;
+    const remainingSeconds = String(seconds % 60).padStart(2, '0');
+    return `${minutes}:${remainingSeconds}`;
   }, []);
 
   const getDifficultyStyle = useCallback((difficulty) => {
@@ -386,42 +353,9 @@ const UserStats = ({ userId }) => {
         <button
           onClick={() => setDarkMode(prev => !prev)}
           className="fixed top-4 right-4 p-2 rounded-full bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 transition-colors"
-          aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
         >
           {darkMode ? '🌙' : '☀️'}
         </button>
-
-        {/* Summary Statistics */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          <StatCard
-            title="Total Completed"
-            value={summaryStats.totalCompleted}
-            subtitle="puzzles completed"
-            className={darkMode ? 'bg-gray-800' : 'bg-white'}
-          />
-          <StatCard
-            title="Best Time"
-            value={formatTime(summaryStats.bestTime)}
-            subtitle="best completion time"
-            className={darkMode ? 'bg-gray-800' : 'bg-white'}
-          />
-          <StatCard
-            title="Average Time"
-            value={formatTime(summaryStats.averageTime)}
-            subtitle="per puzzle"
-            className={darkMode ? 'bg-gray-800' : 'bg-white'}
-          />
-          <StatCard
-            title="Completion Rate"
-            value={`${summaryStats.completionRate}%`}
-            subtitle="puzzles finished"
-            className={darkMode ? 'bg-gray-800' : 'bg-white'}
-          />
-          <DifficultyChart 
-            breakdown={summaryStats.difficultyBreakdown}
-            darkMode={darkMode}
-          />
-        </div>
 
         {/* Filter Controls */}
         <FilterControls
@@ -447,38 +381,19 @@ const UserStats = ({ userId }) => {
                 />
                 <tbody className="divide-y divide-gray-200">
                   {filteredCompletedPuzzles.map((puzzle, index) => (
-                    <tr 
-                      key={puzzle.id} 
-                      className={`hover:${darkMode ? 'bg-gray-700' : 'bg-gray-50'} transition-colors`}
+                    <TableRow
+                      key={puzzle.id}
+                      puzzle={puzzle}
+                      formatTime={formatTime}
+                      getDifficultyStyle={getDifficultyStyle}
+                      darkMode={darkMode}
                       ref={index === filteredCompletedPuzzles.length - 5 ? lastElementRef : null}
-                    >
-                      <td className="px-4 py-3">
-                        <img 
-                          src={puzzle.thumbnail} 
-                          alt={puzzle.name}
-                          className="w-12 h-12 rounded object-cover"
-                          loading="lazy"
-                          fetchPriority="low"
-                        />
-                      </td>
-                      <td className="px-4 py-3 font-medium">{puzzle.name}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs ${getDifficultyStyle(puzzle.difficulty)}`}>
-                          {puzzle.difficulty}x{puzzle.difficulty}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">{formatTime(puzzle.bestTime)}</td>
-                      <td className="px-4 py-3">
-                        {new Date(puzzle.timestamp).toLocaleDateString()}
-                      </td>
-                    </tr>
+                    />
                   ))}
                 </tbody>
               </table>
               
-              {(data.loading || isPending) && <div className="flex justify-center p-4">
-                <Loader className="w-6 h-6 animate-spin" />
-              </div>}
+              {(data.loading || isPending) && <LoadingIndicator />}
               
               {!data.loading && filteredCompletedPuzzles.length === 0 && (
                 <div className="px-4 py-3 text-center text-gray-500">

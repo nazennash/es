@@ -228,7 +228,7 @@ const Home = ({ user }) => {
               <FaSignOutAlt className="mr-2" /> Logout
             </button>
             <button
-              onClick={() => navigate('/leaderboard')}
+              onClick={() => navigate('/user-leaderboard')}
               className="bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 transition duration-200 flex items-center transform hover:scale-105"
             >
               <FaChartBar className="mr-2" /> Leaderboard
