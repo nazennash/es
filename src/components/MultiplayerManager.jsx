@@ -6,7 +6,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
-import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, Play, Pause, Trophy, Users } from 'lucide-react';
+import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, Play, Pause, Trophy, Users, Mouse } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 // Define point values for actions
@@ -112,6 +112,19 @@ class ParticleSystem {
         life: 1.0
       });
     }
+    this.updateGeometry();
+  }
+  
+  emitMultiple(particles) {
+    particles.forEach(particleData => {
+      this.particles.push({
+        position: particleData.position.clone(),
+        velocity: particleData.velocity.clone(),
+        color: particleData.color.clone(),
+        size: 0.05 + Math.random() * 0.05,
+        life: 1.0
+      });
+    });
     this.updateGeometry();
   }
   
@@ -246,26 +259,6 @@ const showPlacementFeedback = (isCorrect, position) => {
   }
 };
 
-// Add progress celebration effects
-const celebrateProgress = (progress) => {
-  if (progress % 25 === 0) { // Celebrate at 25%, 50%, 75%, 100%
-    const confetti = new Array(50).fill().map(() => ({
-      position: new THREE.Vector3(0, 0, 0),
-      velocity: new THREE.Vector3(
-        (Math.random() - 0.5) * 0.3,
-        Math.random() * 0.3,
-        (Math.random() - 0.5) * 0.3
-      ),
-      color: new THREE.Color().setHSL(Math.random(), 0.8, 0.5)
-    }));
-    
-    particleSystemRef.current.emitMultiple(confetti);
-    new Audio('/sounds/celebration.mp3').play();
-    
-    toast.success(`${progress}% Complete! Keep going! 🎉`);
-  }
-};
-
 const MultiplayerManager = ({ gameId, isHost, user, image }) => {
   const navigate = useNavigate();
   
@@ -368,6 +361,29 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     const ms = String(milliseconds % 1000).padStart(3, '0').slice(0, 2);
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${ms}`;
   };
+
+  // Add progress celebration effects
+const celebrateProgress = (progress) => {
+  if (progress % 25 === 0) { // Celebrate at 25%, 50%, 75%, 100%
+    const confettiParticles = [];
+    for (let i = 0; i < 50; i++) {
+      confettiParticles.push({
+        position: new THREE.Vector3(0, 0, 0),
+        velocity: new THREE.Vector3(
+          (Math.random() - 0.5) * 0.3,
+          Math.random() * 0.3,
+          (Math.random() - 0.5) * 0.3
+        ),
+        color: new THREE.Color().setHSL(Math.random(), 0.8, 0.5)
+      });
+    }
+    
+    particleSystemRef.current.emitMultiple(confettiParticles);
+    new Audio('/sounds/celebration.mp3').play();
+    
+    toast.success(`${progress}% Complete! Keep going! 🎉`);
+  }
+};
 
   // Initialize Three.js scene
   useEffect(() => {
