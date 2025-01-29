@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { database, ref, set, update, onValue, remove } from '../firebase';
-import { Camera, Copy, Users, ArrowLeft, Play, Mail, Share2 } from 'lucide-react';
+import { Camera, Copy, Users, ArrowLeft, Play } from 'lucide-react';
 import MultiplayerManager from './MultiplayerManager';
 import { toast } from 'react-hot-toast';
 import ErrorBoundary from './ErrorBoundary';
@@ -169,28 +169,11 @@ const CollaborativePuzzle = () => {
     toast.success('Invite link copied!');
   };
 
-  const handleEmailShare = () => {
-    const subject = encodeURIComponent('Join my Puzzle Game!');
-    const body = encodeURIComponent(`Hey! Join my puzzle game: ${inviteLink}`);
-    window.open(`mailto:?subject=${subject}&body=${body}`);
-  };
-
-  const handleWhatsAppShare = () => {
-    const text = encodeURIComponent(`Hey! Join my puzzle game: ${inviteLink}`);
-    window.open(`https://wa.me/?text=${text}`);
-  };
-
-  const handleFacebookShare = () => {
-    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(inviteLink)}`);
-  };
-
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
-        <div className="animate-bounce p-4 bg-white/10 backdrop-blur-lg rounded-full">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-t-blue-500 border-white"></div>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
       </div>
     );
   }
@@ -198,19 +181,17 @@ const CollaborativePuzzle = () => {
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-900 via-pink-900 to-orange-900">
-        <div className="bg-white/10 backdrop-blur-lg p-8 rounded-xl shadow-2xl max-w-md w-full mx-4">
-          <div className="text-center">
-            <h2 className="text-xl font-bold text-red-600 mb-2">Error</h2>
-            <p className="text-gray-600 mb-4">{error}</p>
-            <button
-              onClick={() => navigate('/puzzle/multiplayer')}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              <ArrowLeft size={20} />
-              <span>Back to Games</span>
-            </button>
-          </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-red-600 mb-2">Error</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={() => navigate('/puzzle/multiplayer')}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            <ArrowLeft size={20} />
+            <span>Back to Games</span>
+          </button>
         </div>
       </div>
     );
@@ -233,17 +214,17 @@ const CollaborativePuzzle = () => {
 
   // Lobby UI
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 p-4 md:p-8">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-gray-100 p-4 md:p-8">
+      <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-6 mb-8 transform hover:scale-[1.02] transition-all">
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
           <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-white to-blue-200 bg-clip-text text-transparent">
-              {isHost ? '🎮 Create New Game' : '🎮 Join Game'}
+            <h1 className="text-2xl font-bold text-gray-900">
+              {isHost ? 'Create New Game' : 'Join Game'}
             </h1>
             <button
               onClick={() => navigate('/')}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all"
+              className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
             >
               <ArrowLeft size={20} />
               <span>Back</span>
@@ -252,17 +233,17 @@ const CollaborativePuzzle = () => {
         </div>
 
         {/* Game Info */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
           {/* Left column */}
           <div className="space-y-8">
             {/* Image Upload (host only) */}
             {isHost && (
-              <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-6 transform hover:scale-[1.02] transition-all">
-                <h2 className="text-xl font-bold text-white mb-4">Upload Puzzle Image</h2>
+              <div className="bg-white rounded-lg shadow-sm p-6">
+                <h2 className="text-lg font-semibold mb-4">Upload Puzzle Image</h2>
                 {!image ? (
-                  <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-white/30 rounded-xl cursor-pointer hover:bg-white/5 transition-all group">
-                    <Camera size={32} className="text-white/70 mb-2 group-hover:scale-110 transition-all" />
-                    <span className="text-white/70">Click to upload image</span>
+                  <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
+                    <Camera size={32} className="text-gray-400 mb-2" />
+                    <span className="text-gray-500">Click to upload image</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -271,20 +252,18 @@ const CollaborativePuzzle = () => {
                     />
                   </label>
                 ) : (
-                  <div className="relative rounded-xl overflow-hidden group">
+                  <div className="relative">
                     <img
                       src={image}
                       alt="Puzzle"
-                      className="w-full h-48 object-contain"
+                      className="w-full h-48 object-contain rounded-lg"
                     />
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
-                      <button
-                        onClick={() => setImage(null)}
-                        className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transform hover:scale-110 transition-all"
-                      >
-                        ×
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => setImage(null)}
+                      className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600"
+                    >
+                      ×
+                    </button>
                   </div>
                 )}
               </div>
@@ -292,49 +271,22 @@ const CollaborativePuzzle = () => {
 
             {/* Invite Link (host only) */}
             {isHost && inviteLink && (
-              <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-6 transform hover:scale-[1.02] transition-all">
-                <h2 className="text-xl font-bold text-white mb-4">Invite Players</h2>
-                <div className="space-y-4">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={inviteLink}
-                      readOnly
-                      className="flex-1 p-3 rounded-lg bg-white/5 border border-white/10 text-white"
-                    />
-                    <button
-                      onClick={handleCopyLink}
-                      className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transform hover:scale-105 transition-all"
-                    >
-                      <Copy size={20} />
-                    </button>
-                  </div>
-                  
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      onClick={handleEmailShare}
-                      className="flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-500 hover:to-gray-600 text-white rounded-lg transform hover:scale-105 transition-all"
-                    >
-                      <Mail size={20} />
-                      <span>Email</span>
-                    </button>
-                    
-                    <button
-                      onClick={handleWhatsAppShare}
-                      className="flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 text-white rounded-lg transform hover:scale-105 transition-all"
-                    >
-                      <Share2 size={20} />
-                      <span>WhatsApp</span>
-                    </button>
-                    
-                    <button
-                      onClick={handleFacebookShare}
-                      className="flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white rounded-lg transform hover:scale-105 transition-all"
-                    >
-                      <Share2 size={20} />
-                      <span>Facebook</span>
-                    </button>
-                  </div>
+              <div className="bg-white rounded-lg shadow-sm p-6">
+                <h2 className="text-lg font-semibold mb-4">Invite Players</h2>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={inviteLink}
+                    readOnly
+                    className="flex-1 p-2 border rounded bg-gray-50"
+                  />
+                  <button
+                    onClick={handleCopyLink}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  >
+                    <Copy size={20} />
+                    <span>Copy</span>
+                  </button>
                 </div>
               </div>
             )}
@@ -343,26 +295,26 @@ const CollaborativePuzzle = () => {
           {/* Right column */}
           <div className="space-y-8">
             {/* Players List */}
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-6 transform hover:scale-[1.02] transition-all">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-white">Players</h2>
-                <div className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-lg">
-                  <Users size={20} className="text-white" />
-                  <span className="text-white">{Object.keys(players).length}</span>
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">Players</h2>
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Users size={20} />
+                  <span>{Object.keys(players).length}</span>
                 </div>
               </div>
               <div className="space-y-2">
                 {Object.values(players).map(player => (
                   <div
                     key={player.id}
-                    className="flex items-center gap-3 p-3 bg-white/5 rounded-lg hover:bg-white/10 transition-all"
+                    className="flex items-center gap-2 p-2 bg-gray-50 rounded"
                   >
-                    <div className={`w-3 h-3 rounded-full ${
-                      player.isOnline ? 'bg-green-400 animate-pulse' : 'bg-gray-400'
+                    <div className={`w-2 h-2 rounded-full ${
+                      player.isOnline ? 'bg-green-500' : 'bg-gray-400'
                     }`} />
-                    <span className="flex-1 text-white">{player.name}</span>
+                    <span className="flex-1">{player.name}</span>
                     {player.isHost && (
-                      <span className="px-2 py-1 bg-blue-500/20 text-blue-300 text-xs font-medium rounded">HOST</span>
+                      <span className="text-xs text-blue-600 font-medium">HOST</span>
                     )}
                   </div>
                 ))}
@@ -373,10 +325,10 @@ const CollaborativePuzzle = () => {
             {isHost && image && (
               <button
                 onClick={handleStartGame}
-                className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white rounded-xl transform hover:scale-105 transition-all shadow-lg hover:shadow-xl"
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition duration-200"
               >
-                <Play size={24} />
-                <span className="text-lg font-bold">Start Game</span>
+                <Play size={20} />
+                <span>Start Game</span>
               </button>
             )}
           </div>
