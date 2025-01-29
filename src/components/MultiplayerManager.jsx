@@ -158,6 +158,13 @@ class ParticleSystem {
   }
 }
 
+const DIFFICULTY_SETTINGS = {
+  easy: { grid: { x: 3, y: 2 }, snapDistance: 0.4, rotationEnabled: false },
+  medium: { grid: { x: 4, y: 3 }, snapDistance: 0.3, rotationEnabled: true },
+  hard: { grid: { x: 5, y: 4 }, snapDistance: 0.2, rotationEnabled: true },
+  expert: { grid: { x: 6, y: 5 }, snapDistance: 0.15, rotationEnabled: true }
+};
+
 const MultiplayerManager = ({ gameId, isHost, user, image }) => {
   const navigate = useNavigate();
   
@@ -207,6 +214,8 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     // progress,
     updateTimer,
     updateProgress,
+    difficulty,
+    updateDifficulty,
   } = useMultiplayerGame(gameId);
 
   // Timer functions
@@ -409,8 +418,9 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
       const texture = await new THREE.TextureLoader().loadAsync(imageUrl);
       const aspectRatio = texture.image.width / texture.image.height;
       
-      // Update grid size to 3x4 for 12 pieces
-      const gridSize = { x: 3, y: 4 };
+      // Get settings based on difficulty
+      const settings = DIFFICULTY_SETTINGS[difficulty];
+      const gridSize = settings.grid;
       const pieceSize = {
         x: 1 * aspectRatio / gridSize.x,
         y: 1 / gridSize.y
@@ -466,7 +476,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
           piece.position.x += (Math.random() - 0.5) * 2;
           piece.position.y += (Math.random() - 0.5) * 2;
           piece.position.z = Math.random() * 0.1;
-          piece.rotation.z = (Math.random() - 0.5) * 0.5;
+          piece.rotation.z = settings.rotationEnabled ? (Math.random() - 0.5) * 0.5 : 0;
         }
       });
 
@@ -495,12 +505,12 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     }
   };
 
-  // Initialize puzzle when image is received
+  // Initialize puzzle when image or difficulty is received
   useEffect(() => {
     if (image) {
       createPuzzlePieces(image);
     }
-  }, [image]);
+  }, [image, difficulty]);
 
   // Handle game completion
   const handleGameCompletion = async () => {
@@ -642,7 +652,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
       const distance = originalPos.distanceTo(piece.position);
       const moveTime = Date.now() - moveStartTime;
 
-      if (distance < 0.3 && !piece.userData.isPlaced) {
+      if (distance < DIFFICULTY_SETTINGS[difficulty].snapDistance && !piece.userData.isPlaced) {
         // Correct placement
         piece.position.copy(originalPos);
         piece.rotation.z = 0;
@@ -781,6 +791,11 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     }
   };
 
+  // Handle difficulty change
+  const handleDifficultyChange = (newDifficulty) => {
+    updateDifficulty(newDifficulty);
+  };
+
   // Handle errors
   if (error) {
     return (
@@ -866,6 +881,31 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
                 className="p-2 bg-red-500 text-white rounded hover:bg-red-600"
               >
                 <RotateCcw size={20} />
+              </button>
+              {/* Difficulty buttons */}
+              <button
+                onClick={() => handleDifficultyChange('easy')}
+                className={`p-2 ${difficulty === 'easy' ? 'bg-blue-500' : 'bg-gray-700'} text-white rounded hover:bg-blue-600`}
+              >
+                Easy
+              </button>
+              <button
+                onClick={() => handleDifficultyChange('medium')}
+                className={`p-2 ${difficulty === 'medium' ? 'bg-blue-500' : 'bg-gray-700'} text-white rounded hover:bg-blue-600`}
+              >
+                Medium
+              </button>
+              <button
+                onClick={() => handleDifficultyChange('hard')}
+                className={`p-2 ${difficulty === 'hard' ? 'bg-blue-500' : 'bg-gray-700'} text-white rounded hover:bg-blue-600`}
+              >
+                Hard
+              </button>
+              <button
+                onClick={() => handleDifficultyChange('expert')}
+                className={`p-2 ${difficulty === 'expert' ? 'bg-blue-500' : 'bg-gray-700'} text-white rounded hover:bg-blue-600`}
+              >
+                Expert
               </button>
             </div>
           )}

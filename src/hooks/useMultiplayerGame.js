@@ -10,6 +10,7 @@ export const useMultiplayerGame = (gameId, isHost = false) => {
   const [loading, setLoading] = useState(true);
   const [timer, setTimer] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [difficulty, setDifficulty] = useState('easy'); // Add difficulty state
 
   // Get user data from localStorage
   const userData = JSON.parse(localStorage.getItem('authUser'));
@@ -79,12 +80,19 @@ export const useMultiplayerGame = (gameId, isHost = false) => {
         setProgress(snapshot.val() || 0);
       });
 
+      // Listen for difficulty changes
+      const difficultyRef = ref(database, `games/${gameId}/difficulty`);
+      const difficultyListener = onValue(difficultyRef, (snapshot) => {
+        setDifficulty(snapshot.val() || 'easy');
+      });
+
       // Cleanup function
       return () => {
         gameListener();
         playersListener();
         timerListener();
         progressListener();
+        difficultyListener();
         if (isHost) {
           // If host leaves, cleanup game
           remove(gameRef);
@@ -253,6 +261,22 @@ export const useMultiplayerGame = (gameId, isHost = false) => {
     }
   }, [gameId]);
 
+  // Update difficulty
+  const updateDifficulty = useCallback(async (newDifficulty) => {
+    if (!gameId) return;
+
+    try {
+      await update(ref(database, `games/${gameId}`), {
+        difficulty: newDifficulty,
+        lastUpdated: Date.now()
+      });
+    } catch (error) {
+      console.error('Update difficulty error:', error);
+      setError('Failed to update difficulty');
+      toast.error('Failed to update difficulty');
+    }
+  }, [gameId]);
+
   return {
     // State
     players,
@@ -263,6 +287,7 @@ export const useMultiplayerGame = (gameId, isHost = false) => {
     userId,
     timer,
     progress,
+    difficulty,
 
     // Game actions
     updateGameState,
@@ -275,6 +300,7 @@ export const useMultiplayerGame = (gameId, isHost = false) => {
     checkGameCompletion,
     updateTimer,
     updateProgress,
+    updateDifficulty,
 
     // Helper methods
     isGameComplete: checkGameCompletion(),
