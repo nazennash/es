@@ -164,108 +164,6 @@ const DIFFICULTY_SETTINGS = {
   expert: { grid: { x: 6, y: 5 }, snapDistance: 0.15, rotationEnabled: true }
 };
 
-// Add visual tutorial overlay for new players
-const TutorialOverlay = ({ onClose }) => (
-  <div className="absolute inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center">
-    <div className="bg-gray-800 p-6 rounded-lg max-w-lg text-white">
-      <h3 className="text-xl font-bold mb-4">How to Play</h3>
-      <ul className="space-y-3 mb-6">
-        <li className="flex items-center gap-2">
-          <Mouse className="text-blue-400" /> Drag and drop pieces to solve the puzzle</li>
-        <li className="flex items-center gap-2">
-          <ZoomIn className="text-blue-400" /> Use mouse wheel or buttons to zoom</li>
-        <li className="flex items-center gap-2">
-          <Image className="text-blue-400" /> Toggle reference image for help</li>
-        <li className="flex items-center gap-2">
-          <Trophy className="text-blue-400" /> Earn bonus points for quick & accurate placements</li>
-      </ul>
-      <button 
-        onClick={onClose}
-        className="w-full py-2 bg-blue-500 rounded hover:bg-blue-600"
-      >
-        Got it!
-      </button>
-    </div>
-  </div>
-);
-
-// Add piece highlighting on hover
-const highlightPiece = (piece) => {
-  if (piece && !piece.userData.isPlaced) {
-    piece.material.uniforms.selected.value = 0.5;
-    // Show "grab" cursor
-    document.body.style.cursor = 'grab';
-  }
-};
-
-const unhighlightPiece = (piece) => {
-  if (piece) {
-    piece.material.uniforms.selected.value = 0;
-    document.body.style.cursor = 'default';
-  }
-};
-
-// Add visual snap guides
-const showSnapGuide = (piece, nearestGuide) => {
-  if (nearestGuide) {
-    const snapLine = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([
-        piece.position,
-        nearestGuide.position
-      ]),
-      new THREE.LineBasicMaterial({ 
-        color: 0x4a90e2,
-        opacity: 0.5,
-        transparent: true,
-        dashSize: 3,
-        gapSize: 1
-      })
-    );
-    sceneRef.current.add(snapLine);
-    return snapLine;
-  }
-  return null;
-};
-
-// Add piece placement feedback
-const showPlacementFeedback = (isCorrect, position) => {
-  // Visual feedback
-  const color = isCorrect ? new THREE.Color(0x00ff00) : new THREE.Color(0xff0000);
-  particleSystemRef.current.emit(position, isCorrect ? 30 : 10, color);
-
-  // Sound feedback
-  if (isCorrect) {
-    new Audio('/sounds/correct-place.mp3').play();
-  } else {
-    new Audio('/sounds/wrong-place.mp3').play();
-  }
-
-  // Haptic feedback (if supported)
-  if (navigator.vibrate) {
-    navigator.vibrate(isCorrect ? [100] : [50, 50, 50]);
-  }
-};
-
-// Add progress celebration effects
-const celebrateProgress = (progress) => {
-  if (progress % 25 === 0) { // Celebrate at 25%, 50%, 75%, 100%
-    const confetti = new Array(50).fill().map(() => ({
-      position: new THREE.Vector3(0, 0, 0),
-      velocity: new THREE.Vector3(
-        (Math.random() - 0.5) * 0.3,
-        Math.random() * 0.3,
-        (Math.random() - 0.5) * 0.3
-      ),
-      color: new THREE.Color().setHSL(Math.random(), 0.8, 0.5)
-    }));
-    
-    particleSystemRef.current.emitMultiple(confetti);
-    new Audio('/sounds/celebration.mp3').play();
-    
-    toast.success(`${progress}% Complete! Keep going! 🎉`);
-  }
-};
-
 const MultiplayerManager = ({ gameId, isHost, user, image }) => {
   const navigate = useNavigate();
   
@@ -302,9 +200,6 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [progress, setProgress] = useState(0); // Add progress state
-  const [showTutorial, setShowTutorial] = useState(true);
-  const [lastHoveredPiece, setLastHoveredPiece] = useState(null);
-  const [currentSnapGuide, setCurrentSnapGuide] = useState(null);
 
   // Multiplayer hook
   const {
@@ -752,22 +647,6 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
         z: intersectPoint.z,
         rotation: selectedPieceRef.current.rotation.z
       });
-
-      // Add hover effects
-      raycaster.setFromCamera(mouse, cameraRef.current);
-      const intersects = raycaster.intersectObjects(puzzlePiecesRef.current);
-      
-      if (intersects.length > 0) {
-        const hoveredPiece = intersects[0].object;
-        if (hoveredPiece !== lastHoveredPiece) {
-          unhighlightPiece(lastHoveredPiece);
-          highlightPiece(hoveredPiece);
-          setLastHoveredPiece(hoveredPiece);
-        }
-      } else {
-        unhighlightPiece(lastHoveredPiece);
-        setLastHoveredPiece(null);
-      }
     };
 
     const onMouseUp = () => {
@@ -873,7 +752,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
       element.removeEventListener('mouseup', onMouseUp);
       element.removeEventListener('mouseleave', onMouseUp);
     };
-  }, [updatePiecePosition, totalPieces, isPlaying, progress]);
+  }, [updatePiecePosition, totalPieces, isPlaying]);
 
   // Sync piece positions from other players
   useEffect(() => {
@@ -942,11 +821,6 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
       </div>
     );
   }
-
-  // Add celebratory effects to progress updates
-  useEffect(() => {
-    celebrateProgress(progress);
-  }, [progress]);
 
   return (
     <div className="h-screen flex flex-col bg-gray-900">
@@ -1194,19 +1068,6 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
           </div>
         )}
       </div>
-      
-      {showTutorial && (
-        <TutorialOverlay onClose={() => setShowTutorial(false)} />
-      )}
-      
-      {/* Add help button */}
-      <button
-        onClick={() => setShowTutorial(true)}
-        className="absolute bottom-4 right-4 p-2 bg-gray-700 text-white rounded-full hover:bg-gray-600"
-        title="Show Help"
-      >
-        <Info size={24} />
-      </button>
     </div>
   );
 };
