@@ -186,7 +186,6 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
 
   // State
   const [loading, setLoading] = useState(true);
-  const [progress, setProgress] = useState(0);
   const [completedPieces, setCompletedPieces] = useState(0);
   const [totalPieces, setTotalPieces] = useState(0);
   const [showThumbnail, setShowThumbnail] = useState(false);
@@ -211,8 +210,8 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     syncPieceState,
     updateGameState,
     timer,
-    // progress,
     updateTimer,
+    progress,
     updateProgress,
     difficulty,
     updateDifficulty,
@@ -685,7 +684,6 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
         setCompletedPieces(prev => {
           const newCount = prev + 1;
           const newProgress = (newCount / totalPieces) * 100;
-          setProgress(newProgress);
           updateProgress(newProgress); // Sync progress
 
           // Check for game completion
