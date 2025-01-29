@@ -157,6 +157,14 @@ class ParticleSystem {
   }
 }
 
+// Define difficulty settings
+const DIFFICULTY_SETTINGS = {
+  easy: { grid: { x: 3, y: 2 }, snapDistance: 0.4, rotationEnabled: false },
+  medium: { grid: { x: 4, y: 3 }, snapDistance: 0.3, rotationEnabled: true },
+  hard: { grid: { x: 5, y: 4 }, snapDistance: 0.2, rotationEnabled: true },
+  expert: { grid: { x: 6, y: 5 }, snapDistance: 0.15, rotationEnabled: true }
+};
+
 const MultiplayerManager = ({ gameId, isHost, user, image }) => {
   const navigate = useNavigate();
   
@@ -174,7 +182,6 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
   const guideOutlinesRef = useRef([]);
   const lastPlacementTimeRef = useRef(Date.now());
   const comboCountRef = useRef(0);
-  const timerRef = useRef(null);
 
   // State
   const [loading, setLoading] = useState(true);
@@ -191,8 +198,8 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
   });
   const [winner, setWinner] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [elapsedTime, setElapsedTime] = useState(0);
+  const [difficulty, setDifficulty] = useState('easy');
+  const [selectedDifficulty, setSelectedDifficulty] = useState(DIFFICULTY_SETTINGS.easy);
 
   // Multiplayer hook
   const {
@@ -203,38 +210,6 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     syncPieceState,
     updateGameState
   } = useMultiplayerGame(gameId);
-
-  // Timer functions
-  const startTimer = () => {
-    if (!isPlaying) {
-      setIsPlaying(true);
-      timerRef.current = setInterval(() => {
-        setElapsedTime((prev) => prev + 100); // Increment by 100ms
-      }, 100);
-    }
-  };
-
-  const pauseTimer = () => {
-    if (isPlaying) {
-      setIsPlaying(false);
-      clearInterval(timerRef.current);
-    }
-  };
-
-  const resetTimer = () => {
-    setIsPlaying(false);
-    clearInterval(timerRef.current);
-    setElapsedTime(0);
-  };
-
-  // Format time utility
-  const formatTime = (milliseconds) => {
-    const totalSeconds = Math.floor(milliseconds / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    const ms = String(milliseconds % 1000).padStart(3, '0').slice(0, 2);
-    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${ms}`;
-  };
 
   // Initialize Three.js scene
   useEffect(() => {
@@ -394,13 +369,12 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
       sceneRef.current.remove(piece);
     });
     puzzlePiecesRef.current = [];
- 
+
     try {
       const texture = await new THREE.TextureLoader().loadAsync(imageUrl);
       const aspectRatio = texture.image.width / texture.image.height;
       
-      // Update grid size to 3x4 for 12 pieces
-      const gridSize = { x: 3, y: 4 };
+      const gridSize = selectedDifficulty.grid;
       const pieceSize = {
         x: 1 * aspectRatio / gridSize.x,
         y: 1 / gridSize.y
@@ -551,6 +525,15 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
 
     // Show completion message
     toast.success('Puzzle completed! 🎉');
+  };
+
+  // Format time utility
+  const formatTime = (milliseconds) => {
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    const ms = String(milliseconds % 1000).padStart(3, '0').slice(0, 2);
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${ms}`;
   };
 
   // Handle piece movement
@@ -767,6 +750,26 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     }
   };
 
+  const handleDifficultyChange = (newDifficulty) => {
+    if (gameState === 'playing') {
+      const confirmChange = window.confirm('Changing difficulty will reset the current puzzle. Continue?');
+      if (!confirmChange) return;
+    }
+    
+    setSelectedDifficulty(newDifficulty);
+    setDifficulty(newDifficulty.id);
+    if (image) {
+      setLoading(true);
+      createPuzzlePieces(image).then(() => {
+        setLoading(false);
+        setGameState('playing');
+        setCompletedPieces(0);
+        setProgress(0);
+        setTimeElapsed(0);
+      });
+    }
+  };
+
   // Handle errors
   if (error) {
     return (
@@ -785,9 +788,6 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     );
   }
 
-  // Rest of the code remains the same...
-  // (Include the rest of your existing code here)
-
   return (
     <div className="h-screen flex flex-col bg-gray-900">
       {/* Header */}
@@ -803,7 +803,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
           <div className="text-white flex items-center gap-4">
             <div className="flex items-center gap-1">
               <Clock size={18} />
-              <span>{formatTime(elapsedTime)}</span>
+              <span>{formatTime(Date.now() - gameStats.startTime)}</span>
             </div>
             <div>Moves: {gameStats.moveCount}</div>
             <div>Accuracy: {gameStats.moveCount > 0 
@@ -831,30 +831,6 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
 
         {/* Controls */}
         <div className="flex items-center gap-2">
-          {isHost && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={startTimer}
-                className="p-2 bg-green-500 text-white rounded hover:bg-green-600"
-                disabled={isPlaying}
-              >
-                <Play size={20} />
-              </button>
-              <button
-                onClick={pauseTimer}
-                className="p-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-                disabled={!isPlaying}
-              >
-                <Pause size={20} />
-              </button>
-              <button
-                onClick={resetTimer}
-                className="p-2 bg-red-500 text-white rounded hover:bg-red-600"
-              >
-                <RotateCcw size={20} />
-              </button>
-            </div>
-          )}
           <button
             onClick={() => setShowThumbnail(!showThumbnail)}
             className="p-2 bg-gray-700 text-white rounded hover:bg-gray-600"
