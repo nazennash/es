@@ -527,24 +527,13 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
       userName: user.displayName || user.email,
       completionTime,
       moveCount: gameStats.moveCount,
+      accurateDrops: gameStats.accurateDrops,
       accuracy,
       points: finalPoints,
       timestamp: endTime
     };
-    
 
     setWinner(finalScore);
-
-    // const completionData = {
-    //   puzzleId: `custom_${Date.now()}`,
-    //   userId: auth.currentUser.uid,
-    //   playerName: auth.currentUser.email || 'Anonymous',
-    //   startTime: startTime,
-    //   difficulty,
-    //   imageUrl: image,
-    //   timer: timeElapsed,
-    // };
-
 
     const completionData = {
       puzzleId: `custom_${Date.now()}`,
@@ -566,7 +555,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     });
 
     // Update leaderboard
-    setLeaderboard(prev => [...prev, finalScore].sort((a, b) => b.points - a.points));
+    setLeaderboard(prev => [...prev, finalScore].sort((a, b) => b.accurateDrops - a.accurateDrops));
 
     // Show completion message
     toast.success('Puzzle completed! 🎉');
@@ -1022,6 +1011,14 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
                     <div>
                       <p className="text-gray-400">Points</p>
                       <p className="text-lg text-yellow-400">{winner.points}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400">Completed Pieces</p>
+                      <p className="text-lg">{completedPieces}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-400">Remaining Pieces</p>
+                      <p className="text-lg">{totalPieces - completedPieces}</p>
                     </div>
                   </div>
                 </div>
