@@ -200,6 +200,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
   const [leaderboard, setLeaderboard] = useState([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [progress, setProgress] = useState(0); // Add progress state
 
   // Multiplayer hook
   const {
@@ -211,7 +212,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     updateGameState,
     timer,
     updateTimer,
-    progress,
+    progress: syncedProgress, // Add synced progress
     updateProgress,
     difficulty,
     updateDifficulty,
@@ -238,11 +239,21 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     }
   };
 
-  const resetTimer = () => {
+  const resetGame = () => { // Change resetTimer to resetGame
     setIsPlaying(false);
     clearInterval(timerRef.current);
     setElapsedTime(0);
     updateTimer(0); // Sync timer reset
+    setCompletedPieces(0);
+    setProgress(0); // Reset progress
+    setGameStats({
+      moveCount: 0,
+      accurateDrops: 0,
+      startTime: Date.now(),
+      points: 0,
+      combos: 0
+    });
+    createPuzzlePieces(image); // Recreate puzzle pieces
   };
 
   // Format time utility
@@ -511,6 +522,11 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     }
   }, [image, difficulty]);
 
+  // Initialize game in easy mode
+  useEffect(() => {
+    updateDifficulty('easy');
+  }, []);
+
   // Handle game completion
   const handleGameCompletion = async () => {
     const endTime = Date.now();
@@ -574,6 +590,8 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     let moveStartTime = null;
 
     const onMouseDown = (event) => {
+      if (!isPlaying) return; // Prevent moving pieces when game is not started
+
       const rect = rendererRef.current.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -673,6 +691,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
         setCompletedPieces(prev => {
           const newCount = prev + 1;
           const newProgress = (newCount / totalPieces) * 100;
+          setProgress(newProgress); // Update local progress
           updateProgress(newProgress); // Sync progress
 
           // Check for game completion
@@ -734,7 +753,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
       element.removeEventListener('mouseup', onMouseUp);
       element.removeEventListener('mouseleave', onMouseUp);
     };
-  }, [updatePiecePosition, totalPieces]);
+  }, [updatePiecePosition, totalPieces, isPlaying]);
 
   // Sync piece positions from other players
   useEffect(() => {
@@ -836,7 +855,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
 
         {/* Progress bar */}
         <div className="flex items-center gap-4">
-          <div className="text-white">Progress: {Math.round(progress)}%</div> {/* Use synced progress */}
+          <div className="text-white">Progress: {Math.round(progress)}%</div> {/* Use local progress */}
           <div className="w-48 h-2 bg-gray-700 rounded-full overflow-hidden">
             <div
               className="h-full bg-blue-500 transition-all duration-300"
@@ -864,7 +883,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
                 <Pause size={20} />
               </button>
               <button
-                onClick={resetTimer}
+                onClick={resetGame} // Change to resetGame
                 className="p-2 bg-red-500 text-white rounded hover:bg-red-600"
               >
                 <RotateCcw size={20} />
