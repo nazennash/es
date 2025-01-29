@@ -9,6 +9,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { Camera, Check, Info, Clock, ZoomIn, ZoomOut, Maximize2, RotateCcw, Image, Play, Pause, Trophy, Users } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
+
 // Define point values for actions
 const POINTS = {
   ACCURATE_PLACEMENT: 100,
@@ -201,7 +202,11 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     error,
     updatePiecePosition,
     syncPieceState,
-    updateGameState
+    updateGameState,
+    timer,
+    // progress,
+    updateTimer,
+    updateProgress,
   } = useMultiplayerGame(gameId);
 
   // Timer functions
@@ -209,7 +214,11 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     if (!isPlaying) {
       setIsPlaying(true);
       timerRef.current = setInterval(() => {
-        setElapsedTime((prev) => prev + 100); // Increment by 100ms
+        setElapsedTime((prev) => {
+          const newTime = prev + 100;
+          updateTimer(newTime); // Sync timer
+          return newTime;
+        });
       }, 100);
     }
   };
@@ -225,6 +234,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     setIsPlaying(false);
     clearInterval(timerRef.current);
     setElapsedTime(0);
+    updateTimer(0); // Sync timer reset
   };
 
   // Format time utility
@@ -551,6 +561,9 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
 
     // Show completion message
     toast.success('Puzzle completed! 🎉');
+
+    // Sync progress
+    updateProgress(100);
   };
 
   // Handle piece movement
@@ -663,6 +676,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
           const newCount = prev + 1;
           const newProgress = (newCount / totalPieces) * 100;
           setProgress(newProgress);
+          updateProgress(newProgress); // Sync progress
 
           // Check for game completion
           if (newProgress === 100) {
@@ -803,7 +817,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
           <div className="text-white flex items-center gap-4">
             <div className="flex items-center gap-1">
               <Clock size={18} />
-              <span>{formatTime(elapsedTime)}</span>
+              <span>{formatTime(timer)}</span> {/* Use synced timer */}
             </div>
             <div>Moves: {gameStats.moveCount}</div>
             <div>Accuracy: {gameStats.moveCount > 0 
@@ -820,7 +834,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
 
         {/* Progress bar */}
         <div className="flex items-center gap-4">
-          <div className="text-white">Progress: {Math.round(progress)}%</div>
+          <div className="text-white">Progress: {Math.round(progress)}%</div> {/* Use synced progress */}
           <div className="w-48 h-2 bg-gray-700 rounded-full overflow-hidden">
             <div
               className="h-full bg-blue-500 transition-all duration-300"

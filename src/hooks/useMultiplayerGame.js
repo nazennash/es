@@ -8,6 +8,8 @@ export const useMultiplayerGame = (gameId, isHost = false) => {
   const [gameState, setGameState] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [timer, setTimer] = useState(0);
+  const [progress, setProgress] = useState(0);
 
   // Get user data from localStorage
   const userData = JSON.parse(localStorage.getItem('authUser'));
@@ -65,10 +67,24 @@ export const useMultiplayerGame = (gameId, isHost = false) => {
         }
       });
 
+      // Listen for timer and progress updates
+      const timerRef = ref(database, `games/${gameId}/timer`);
+      const progressRef = ref(database, `games/${gameId}/progress`);
+
+      const timerListener = onValue(timerRef, (snapshot) => {
+        setTimer(snapshot.val() || 0);
+      });
+
+      const progressListener = onValue(progressRef, (snapshot) => {
+        setProgress(snapshot.val() || 0);
+      });
+
       // Cleanup function
       return () => {
         gameListener();
         playersListener();
+        timerListener();
+        progressListener();
         if (isHost) {
           // If host leaves, cleanup game
           remove(gameRef);
@@ -207,6 +223,36 @@ export const useMultiplayerGame = (gameId, isHost = false) => {
     return allPieces.length > 0 && allPieces.every(piece => piece.isPlaced);
   }, [gameState?.pieces]);
 
+  // Update timer
+  const updateTimer = useCallback(async (newTimer) => {
+    if (!gameId) return;
+
+    try {
+      await update(ref(database, `games/${gameId}`), {
+        timer: newTimer,
+      });
+    } catch (error) {
+      console.error('Update timer error:', error);
+      setError('Failed to update timer');
+      toast.error('Failed to update timer');
+    }
+  }, [gameId]);
+
+  // Update progress
+  const updateProgress = useCallback(async (newProgress) => {
+    if (!gameId) return;
+
+    try {
+      await update(ref(database, `games/${gameId}`), {
+        progress: newProgress,
+      });
+    } catch (error) {
+      console.error('Update progress error:', error);
+      setError('Failed to update progress');
+      toast.error('Failed to update progress');
+    }
+  }, [gameId]);
+
   return {
     // State
     players,
@@ -215,6 +261,8 @@ export const useMultiplayerGame = (gameId, isHost = false) => {
     loading,
     isHost,
     userId,
+    timer,
+    progress,
 
     // Game actions
     updateGameState,
@@ -225,6 +273,8 @@ export const useMultiplayerGame = (gameId, isHost = false) => {
     startGame,
     endGame,
     checkGameCompletion,
+    updateTimer,
+    updateProgress,
 
     // Helper methods
     isGameComplete: checkGameCompletion(),
