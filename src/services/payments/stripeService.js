@@ -2,7 +2,7 @@ import Stripe from 'stripe';
 
 class StripeService {
   constructor() {
-    this.stripe = new Stripe(import.meta.env.STRIPE_SECRET_KEY, {
+    this.stripe = new Stripe(import.meta.env.VITE_STRIPE_SECRET_KEY, {
       apiVersion: '2023-10-16',
     });
   }

@@ -1,44 +1,24 @@
-import { useState } from 'react';
-import { StripeService } from '../services/payments/stripeService.js';
-import { PayPalService } from '../services/payments/paypalService.js';
+import { StripeService } from '../services/payments/stripeService';
+import { PayPalService } from '../services/payments/paypalService';
+class PaymentProcessor extends PaymentService {
+  constructor(paymentGateway) {
+    super();
+    this.paymentGateway = paymentGateway;
+  }
 
-export const usePayment = () => {
-  const [loading, setLoading] = useState(false);
-  const stripeService = new StripeService();
-  const paypalService = new PayPalService();
+  async createPayment(amount, currency) {
+    return this.paymentGateway.createPayment(amount, currency);
+  }
 
-  const handleStripePayment = async (amount) => {
-    setLoading(true);
-    try {
-      const intent = await stripeService.createPayment(amount);
-      const stripe = await loadStripe(process.env.STRIPE_PUBLIC_KEY);
-      await stripe.redirectToCheckout({
-        sessionId: intent.id
-      });
-    } catch (error) {
-      console.error('Payment failed:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
+  async capturePayment(paymentId) {
+    return this.paymentGateway.capturePayment(paymentId);
+  }
+}
 
-  const handlePayPalPayment = async (amount) => {
-    setLoading(true);
-    try {
-      const order = await paypalService.createPayment(amount);
-      window.location.href = order.links.find(link => link.rel === 'approve').href;
-    } catch (error) {
-      console.error('Payment failed:', error);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  };
+// Example usage with Stripe
+const stripeService = new StripeService();
+const stripePaymentProcessor = new PaymentProcessor(stripeService);
 
-  return {
-    handleStripePayment,
-    handlePayPalPayment,
-    loading
-  };
-};
+// Example usage with PayPal
+const payPalService = new PayPalService();
+const payPalPaymentProcessor = new PaymentProcessor(payPalService);

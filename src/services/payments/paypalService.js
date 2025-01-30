@@ -2,14 +2,15 @@ import paypal from '@paypal/checkout-server-sdk';
 
 class PayPalService {
   constructor() {
-    const clientId = import.meta.env.PAYPAL_CLIENT_ID;
-    const clientSecret = import.meta.env.PAYPAL_CLIENT_SECRET;
-    const environment =
-    import.meta.env.NODE_ENV === 'production'
-        ? new paypal.core.LiveEnvironment(clientId, clientSecret)
-        : new paypal.core.SandboxEnvironment(clientId, clientSecret);
+    const Environment = import.meta.env.PROD
+      ? paypal.core.LiveEnvironment
+      : paypal.core.SandboxEnvironment;
 
-    this.client = new paypal.core.PayPalHttpClient(environment);
+    const clientId = import.meta.env.VITE_PAYPAL_CLIENT_ID;
+    const clientSecret = import.meta.env.VITE_PAYPAL_CLIENT_SECRET;
+
+    this.environment = new Environment(clientId, clientSecret);
+    this.client = new paypal.core.PayPalHttpClient(this.environment);
   }
 
   async createPayment(amount, currency = 'USD') {
