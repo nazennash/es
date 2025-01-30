@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { auth } from '../firebase';
+import { auth } from '../firebase'; // Ensure this is initialized correctly
 import { useNavigate } from 'react-router-dom';
 import { 
   getFirestore, 
@@ -7,16 +7,38 @@ import {
   query, 
   where, 
   orderBy, 
-  getDocs,
+  onSnapshot,
   doc,
-  getDoc,
-  limit,
-  writeBatch
+  limit
 } from 'firebase/firestore';
 import { nanoid } from 'nanoid';
 import QuickAccess from './QuickAccess';
 import toast from 'react-hot-toast';
 import { FaPuzzlePiece, FaTrophy, FaClock, FaSignOutAlt, FaChartBar, FaImage, FaGlobe, FaUsers } from 'react-icons/fa';
+
+// Initialize Firestore
+const db = getFirestore();
+
+// Custom caching functions
+const getCachedData = (key) => {
+  const cachedData = localStorage.getItem(key);
+  if (cachedData) {
+    const { data, timestamp } = JSON.parse(cachedData);
+    // Check if cache is still valid (e.g., 5 minutes)
+    if (Date.now() - timestamp < 5 * 60 * 1000) {
+      return data;
+    }
+  }
+  return null;
+};
+
+const setCachedData = (key, data) => {
+  const cache = {
+    data,
+    timestamp: Date.now()
+  };
+  localStorage.setItem(key, JSON.stringify(cache));
+};
 
 // Custom hook for user stats and puzzles
 const useUserData = (userId) => {
@@ -32,78 +54,103 @@ const useUserData = (userId) => {
   });
 
   useEffect(() => {
-    const fetchData = async () => {
-      if (!userId) return;
+    if (!userId) return;
 
-      try {
-        const db = getFirestore();
-        
-        // Fetch recent puzzles and stats in parallel
-        const [puzzlesData, statsData] = await Promise.all([
-          fetchRecentPuzzles(db, userId),
-          fetchUserStats(db, userId)
-        ]);
+    // Check local storage for cached data
+    const cachedPuzzles = getCachedData(`recentPuzzles-${userId}`);
+    const cachedStats = getCachedData(`userStats-${userId}`);
 
-        // Calculate stats
-        const averageTime = calculateAverageTime(puzzlesData);
-        
-        setData({
-          recentPuzzles: puzzlesData,
+    if (cachedPuzzles && cachedStats) {
+      setData({
+        recentPuzzles: cachedPuzzles,
+        stats: cachedStats,
+        loading: false,
+        error: null
+      });
+    }
+
+    // Real-time listener for recent puzzles
+    const puzzlesRef = collection(db, 'completed_puzzles');
+    const puzzlesQuery = query(
+      puzzlesRef,
+      where('userId', '==', userId),
+      orderBy('completionTime', 'desc'),
+      limit(3)
+    );
+
+    const unsubscribePuzzles = onSnapshot(puzzlesQuery, (puzzleSnap) => {
+      const puzzlesData = puzzleSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })).reverse();
+
+      // Calculate average time
+      const averageTime = calculateAverageTime(puzzlesData);
+
+      // Cache recent puzzles
+      setCachedData(`recentPuzzles-${userId}`, puzzlesData);
+
+      setData((prev) => ({
+        ...prev,
+        recentPuzzles: puzzlesData,
+        stats: {
+          ...prev.stats,
+          averageTime
+        },
+        loading: false,
+        error: null
+      }));
+    }, (error) => {
+      console.error('Error fetching recent puzzles:', error);
+      setData((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Failed to load recent puzzles'
+      }));
+      toast.error('Failed to load recent puzzles');
+    });
+
+    // Real-time listener for user stats
+    const userStatsRef = doc(db, 'user_stats', userId);
+    const unsubscribeStats = onSnapshot(userStatsRef, (userStatsSnap) => {
+      if (userStatsSnap.exists()) {
+        const statsData = userStatsSnap.data();
+
+        // Cache user stats
+        setCachedData(`userStats-${userId}`, statsData);
+
+        setData((prev) => ({
+          ...prev,
           stats: {
+            ...prev.stats,
             completed: statsData.completed || 0,
-            bestTime: statsData.bestTime,
-            averageTime
+            bestTime: statsData.bestTime
           },
           loading: false,
           error: null
-        });
-      } catch (error) {
-        console.error('Error fetching user data:', error);
-        setData(prev => ({
-          ...prev,
-          loading: false,
-          error: 'Failed to load user data'
         }));
-        toast.error('Failed to load user data');
       }
-    };
+    }, (error) => {
+      console.error('Error fetching user stats:', error);
+      setData((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Failed to load user stats'
+      }));
+      toast.error('Failed to load user stats');
+    });
 
-    fetchData();
+    // Cleanup listeners on unmount or userId change
+    return () => {
+      unsubscribePuzzles();
+      unsubscribeStats();
+    };
   }, [userId]);
 
   return data;
 };
 
-// Firebase query functions
-const fetchRecentPuzzles = async (db, userId) => {
-  const puzzlesRef = collection(db, 'completed_puzzles');
-  const puzzlesQuery = query(
-    puzzlesRef,
-    where('userId', '==', userId),
-    orderBy('completionTime', 'desc'),
-    limit(3)
-  );
-  
-  const puzzleSnap = await getDocs(puzzlesQuery);
-  return puzzleSnap.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data()
-  })).reverse();
-};
-
-const fetchUserStats = async (db, userId) => {
-  const userStatsRef = doc(collection(db, 'user_stats'), userId);
-  const userStatsSnap = await getDoc(userStatsRef);
-  return userStatsSnap.exists() ? userStatsSnap.data() : {};
-};
-
-const calculateAverageTime = (puzzles) => {
-  if (!puzzles.length) return null;
-  const totalTime = puzzles.reduce((sum, puzzle) => sum + puzzle.completionTime, 0);
-  return Math.round(totalTime / puzzles.length);
-};
-
-// Time formatter utility
+// Memoized time formatter utility
 const formatTime = (time) => {
   if (!time) return '--:--';
   const minutes = Math.floor(time / 60);
@@ -115,9 +162,9 @@ const formatTime = (time) => {
 // Main component
 const Home = ({ user }) => {
   const navigate = useNavigate();
-  const { recentPuzzles, stats, loading, error } = useUserData(user.uid);
+  const { recentPuzzles, stats, loading, error } = useUserData(user?.uid);
 
-  // Memoized components
+  // Memoized Stats Section to prevent unnecessary re-renders
   const StatsSection = useMemo(() => (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
       <div className="bg-white rounded-lg shadow-lg p-6 transform transition-transform hover:scale-105 hover:shadow-2xl">
@@ -143,9 +190,9 @@ const Home = ({ user }) => {
         </p>
       </div>
     </div>
-  ), [stats]);
+  ), [stats.completed, stats.bestTime, stats.averageTime]);
 
-  // Handlers
+  // Memoized handlers to prevent unnecessary re-renders
   const handleLogout = useCallback(async () => {
     try {
       await auth.signOut();
@@ -166,7 +213,6 @@ const Home = ({ user }) => {
         navigate('/puzzle/cultural');
         break;
       case 'multiplayer':
-        // Create multiplayer game with unique ID
         const gameId = nanoid(6);
         navigate(`/puzzle/multiplayer/${gameId}`);
         break;
@@ -310,7 +356,6 @@ const Home = ({ user }) => {
                       src={puzzle.thumbnail} 
                       alt="Puzzle thumbnail" 
                       className="w-full h-32 object-contain rounded mb-2"
-                      // className="w-full h-32 object-contain rounded mb-2"
                       loading="lazy"
                     />
                     <h3 className="font-semibold">{puzzle.name || 'Puzzle'}</h3>
