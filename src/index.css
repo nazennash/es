@@ -1,3 +1,80 @@
 @tailwind base;
 @tailwind components;
+<<<<<<< HEAD
 @tailwind utilities;
+=======
+@tailwind utilities;
+
+body {
+  perspective: 1000px;
+  transform-style: preserve-3d;
+}
+
+.puzzle-container {
+  position: relative;
+  height: 600px;
+  width: 100%;
+  background: rgb(245, 245, 245);
+  border-radius: 8px;
+  overflow: hidden;
+  touch-action: none;
+}
+
+/* Add smooth transitions for dragging */
+.puzzle-piece {
+  transition: all 0.2s ease;
+  will-change: transform;
+  backface-visibility: visible;
+  cursor: grab;
+}
+
+.puzzle-piece:active {
+  cursor: grabbing;
+}
+
+/* Enhance 3D effect with piece hovering */
+.puzzle-piece:hover {
+  transform: translateZ(20px);
+  box-shadow: 0 0 20px rgba(0,0,0,0.2);
+}
+
+/* Smooth transitions for all transformations */
+* {
+  transition: transform 0.1s ease-out;
+}
+
+/* Prevent text selection during orbit rotation */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Add styles for the 3D canvas */
+canvas {
+  width: 100% !important;
+  height: 100% !important;
+  touch-action: none;
+  outline: none;
+}
+
+
+.puzzle-bg {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: url('path-to-puzzle-image.png') repeat;
+  animation: float 30s linear infinite;
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(0) translateX(0);
+  }
+  50% {
+    transform: translateY(-50px) translateX(50px);
+  }
+  100% {
+    transform: translateY(0) translateX(0);
+  }
+}
+>>>>>>> new

@@ -12,6 +12,7 @@ import CustomUserPuzzle from './components/CustomUserPuzzle';
 import CustomCulturalPuzzle from './components/CustomCulturalPuzzle';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from 'react-hot-toast';
+<<<<<<< HEAD
 
 // Component for multiplayer puzzle view
 const MultiplayerPuzzle = () => {
@@ -19,14 +20,58 @@ const MultiplayerPuzzle = () => {
   const isNewGame = !gameId.includes('join_');
   const actualGameId = isNewGame ? gameId : gameId.replace('join_', '');
 
+=======
+import { nanoid } from 'nanoid';
+import CollaborativePuzzle from './components/CollaborativePuzzle';
+import PaymentPlans from './components/PaymentPlans';
+import PaymentSuccess from './components/PaymentSuccess';
+import PaymentCancel from './components/PaymentCancel';
+
+// Enhanced MultiplayerPuzzle component with better game ID handling
+const MultiplayerPuzzle = () => {
+  const { gameId } = useParams();
+  const userData = JSON.parse(localStorage.getItem('authUser'));
+  
+  // Determine if this is a new game or joining an existing one
+  const isJoining = gameId.startsWith('join_');
+  const actualGameId = isJoining ? gameId.replace('join_', '') : gameId;
+  
+>>>>>>> new
   return (
     <ErrorBoundary>
       <div className="puzzle-container">
         <MultiplayerManager 
           gameId={actualGameId}
+<<<<<<< HEAD
           isHost={isNewGame}
           isMultiPlayer={true}
           user={auth.currentUser}
+=======
+          isHost={!isJoining}
+          isMultiPlayer={true}
+          user={userData}
+          key={actualGameId} // Ensure fresh instance on game ID change
+        />
+      </div>
+    </ErrorBoundary>
+  );
+};
+
+// New component for creating a new multiplayer game
+const NewMultiplayerGame = () => {
+  const gameId = nanoid(6); // Generate a unique game ID
+  const userData = JSON.parse(localStorage.getItem('authUser'));
+
+  return (
+    <ErrorBoundary>
+      <div className="puzzle-container">
+        <MultiplayerManager 
+          gameId={gameId}
+          isHost={true}
+          isMultiPlayer={true}
+          user={userData}
+          key={gameId}
+>>>>>>> new
         />
       </div>
     </ErrorBoundary>
@@ -40,15 +85,30 @@ const App = () => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
+<<<<<<< HEAD
         setUser(user);
         localStorage.setItem('authUser', JSON.stringify(user));
+=======
+        // Store minimal user data in localStorage
+        const userData = {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL
+        };
+        setUser(userData);
+        localStorage.setItem('authUser', JSON.stringify(userData));
+>>>>>>> new
       } else {
         setUser(null);
         localStorage.removeItem('authUser');
       }
       setLoading(false);
     });
+<<<<<<< HEAD
 
+=======
+>>>>>>> new
     return () => unsubscribe();
   }, []);
 
@@ -78,26 +138,68 @@ const App = () => {
               element={user ? <Home user={user} /> : <Navigate to="/auth" replace />} 
             />
 
+<<<<<<< HEAD
+=======
+            {/* Puzzle Routes */}
+>>>>>>> new
             <Route 
               path="/puzzle/custom"
               element={<PrivateRoute element={CustomUserPuzzle} />}
             />
+<<<<<<< HEAD
 
+=======
+>>>>>>> new
             <Route 
               path="/puzzle/cultural"
               element={<PrivateRoute element={CustomCulturalPuzzle} />}
             />
 
+<<<<<<< HEAD
             <Route
               path="/puzzle/multiplayer/:gameId"
               element={<PrivateRoute element={MultiplayerPuzzle} />}
             />
 
+=======
+            {/* Multiplayer Routes */}
+            <Route
+              path="/puzzle/multiplayer/new"
+              element={<PrivateRoute element={NewMultiplayerGame} />}
+            />
+            <Route
+              path="/puzzle/multiplayer/:gameId"
+              element={
+                <CollaborativePuzzle 
+                  mode="play"  // or "create" or "join"
+                />
+              }
+            />
+
+            {/* Payment Routes */}
+            <Route
+              path="/payment-plans"
+              element={<PrivateRoute element={() => <PaymentPlans user={user} />} />}
+            />
+            <Route
+              path="/payment-success"
+              element={<PrivateRoute element={PaymentSuccess} />}
+            />
+            <Route
+              path="/payment-cancel"
+              element={<PrivateRoute element={PaymentCancel} />}
+            />
+
+            {/* Leaderboard Routes */}
+>>>>>>> new
             <Route
               path="/leaderboard"
               element={<PrivateRoute element={Leaderboard} />}
             />
+<<<<<<< HEAD
 
+=======
+>>>>>>> new
             <Route
               path="/user-leaderboard"
               element={
@@ -111,6 +213,12 @@ const App = () => {
                 />
               }
             />
+<<<<<<< HEAD
+=======
+
+            {/* Catch-all redirect */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+>>>>>>> new
           </Routes>
         </main>
       </div>

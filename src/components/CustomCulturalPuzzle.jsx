@@ -16,6 +16,10 @@ import african from '../assets/african.png';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tooltip } from 'react-tooltip';
 import DifficultyBar, { difficulties } from './DifficultyBar';
+<<<<<<< HEAD
+=======
+import { handlePuzzleCompletion, isPuzzleComplete } from './PuzzleCompletionHandler';
+>>>>>>> new
 
 // 2. Constants
 const DIFFICULTY_SETTINGS = {
@@ -256,12 +260,21 @@ const ImageSelectionModal = ({ images, onSelect, isOpen, onClose }) => {
                 onSelect(img);
                 onClose();
               }}
+<<<<<<< HEAD
               className="group relative overflow-hidden rounded-lg cursor-pointer transform transition-all duration-300 hover:scale-105"
+=======
+              className="group relative overflow-hidden rounded-lg cursor-pointer transform transition-all duration-300 hover:scale-105 "
+>>>>>>> new
             >
               <img
                 src={img.src}
                 alt={img.title}
+<<<<<<< HEAD
                 className="w-full h-48 object-cover"
+=======
+                className="w-full h-48 object-contain"
+                // className="w-full h-48 object-cover"
+>>>>>>> new
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent flex flex-col justify-end p-4">
                 <h3 className="text-white font-bold text-lg">{img.title}</h3>
@@ -920,7 +933,11 @@ const PuzzleGame = () => {
   );
 
   // Add this function inside the component
+<<<<<<< HEAD
   // const handlePuzzleCompletion = async (puzzleData) => {
+=======
+  // const handlePuzzleCompletionCultural = async (puzzleData) => {
+>>>>>>> new
   //   if (!auth.currentUser) return;
     
   //   try {
@@ -937,6 +954,7 @@ const PuzzleGame = () => {
   // Modify the completion effect
   useEffect(() => {
     if (progress === 100 && auth?.currentUser) {
+<<<<<<< HEAD
       const completionData = {
         puzzleId: `custom_${Date.now()}`,
         userId: auth.currentUser.uid,
@@ -951,6 +969,35 @@ const PuzzleGame = () => {
       };
       
       console.log('Puzzle Completion Data:', completionData);
+=======
+      // const completionData = {
+      //   puzzleId: `custom_${Date.now()}`,
+      //   userId: auth.currentUser.uid,
+      //   playerName: auth.currentUser.displayName || 'Anonymous',
+      //   startTime,
+      //   difficulty,
+      //   imageUrl: image,
+      //   timer: timeElapsed,
+      //   completedAt: new Date(),
+      //   totalPieces,
+      //   completedPieces
+      // };
+      
+      // console.log('Puzzle Completion Data:', completionData);
+      // handlePuzzleCompletionCultural(completionData);
+
+      const completionData = {
+        puzzleId: `custom_${Date.now()}`,
+        userId: auth.currentUser.uid,
+        playerName: auth.currentUser.email || 'Anonymous',
+        startTime: startTime,
+        difficulty,
+        imageUrl: image,
+        timer: timeElapsed,
+      };
+
+      console.log('Data sent to handlePuzzleCompletion:', completionData);
+>>>>>>> new
       handlePuzzleCompletion(completionData);
       
       // Log achievement data
@@ -976,7 +1023,11 @@ const PuzzleGame = () => {
       console.log('Starting synchronous completion process...');
       
       // Wait for puzzle completion
+<<<<<<< HEAD
       await handlePuzzleCompletion({
+=======
+      await handlePuzzleCompletionCultural({
+>>>>>>> new
         puzzleId: `custom_${Date.now()}`,
         userId: auth?.currentUser?.uid,
         playerName: auth?.currentUser?.displayName || 'Anonymous',
@@ -1071,7 +1122,11 @@ const PuzzleGame = () => {
   };
 
   // Modify puzzle completion handler
+<<<<<<< HEAD
   const handlePuzzleCompletion = async () => {
+=======
+  const handlePuzzleCompletionCultural = async () => {
+>>>>>>> new
     if (!auth.currentUser) return;
     
     const achievements = checkAchievements();

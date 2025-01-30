@@ -24,7 +24,12 @@ const QuickAccess = ({ userId }) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {recentPuzzles.map(puzzle => (
             <div key={puzzle.id} className="border rounded-lg p-4">
+<<<<<<< HEAD
               <img src={puzzle.thumbnail} alt="Puzzle" className="w-full h-32 object-cover rounded mb-2"/>
+=======
+              <img src={puzzle.thumbnail} alt="Puzzle" className="w-full h-32 object-contain rounded mb-2"/>
+              {/* <img src={puzzle.thumbnail} alt="Puzzle" className="w-full h-32 object-cover rounded mb-2"/> */}
+>>>>>>> new
               <p className="font-semibold">{puzzle.name}</p>
               <div className="flex items-center justify-between mt-2">
                 <span className="text-sm text-gray-500">
@@ -49,7 +54,12 @@ const QuickAccess = ({ userId }) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {savedPuzzles.map(puzzle => (
             <div key={puzzle.id} className="border rounded-lg p-4">
+<<<<<<< HEAD
               <img src={puzzle.savedThumbnail} alt="Puzzle" className="w-full h-32 object-cover rounded mb-2"/>
+=======
+              <img src={puzzle.savedThumbnail} alt="Puzzle" className="w-full h-32 object-contain rounded mb-2"/>
+              {/* <img src={puzzle.savedThumbnail} alt="Puzzle" className="w-full h-32 object-cover rounded mb-2"/> */}
+>>>>>>> new
               <p className="font-semibold">{puzzle.name}</p>
               <div className="flex items-center justify-between mt-2">
                 <span className="text-sm text-gray-500">
