@@ -1,24 +1,62 @@
+// hooks/usePayment.js
+import { useState } from 'react';
 import { StripeService } from '../services/payments/stripeService';
 import { PayPalService } from '../services/payments/paypalService';
-class PaymentProcessor extends PaymentService {
-  constructor(paymentGateway) {
-    super();
-    this.paymentGateway = paymentGateway;
-  }
 
-  async createPayment(amount, currency) {
-    return this.paymentGateway.createPayment(amount, currency);
-  }
+export const usePayment = () => {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  async capturePayment(paymentId) {
-    return this.paymentGateway.capturePayment(paymentId);
-  }
-}
+  const stripeService = new StripeService();
+  const payPalService = new PayPalService();
 
-// Example usage with Stripe
-const stripeService = new StripeService();
-const stripePaymentProcessor = new PaymentProcessor(stripeService);
+  const handleStripePayment = async (amount) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await stripeService.createPayment(amount, 'USD');
+      return result;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
 
-// Example usage with PayPal
-const payPalService = new PayPalService();
-const payPalPaymentProcessor = new PaymentProcessor(payPalService);
+  const handlePayPalPayment = async (amount) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await payPalService.createPayment(amount, 'USD');
+      return result;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePayPalCapture = async (orderId) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await payPalService.capturePayment(orderId);
+      return result;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return {
+    handleStripePayment,
+    handlePayPalPayment,
+    handlePayPalCapture,
+    loading,
+    error,
+  };
+};

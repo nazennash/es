@@ -15,16 +15,16 @@ import { nanoid } from 'nanoid';
 import QuickAccess from './QuickAccess';
 import toast from 'react-hot-toast';
 import { FaPuzzlePiece, FaTrophy, FaClock, FaSignOutAlt, FaChartBar, FaImage, FaGlobe, FaUsers } from 'react-icons/fa';
-// import { loadStripe } from '@stripe/stripe-js';
-// import { usePayment } from '../hooks/usePayment';
-// import { PayPalScriptProvider } from '@paypal/react-paypal-js';
+import { loadStripe } from '@stripe/stripe-js';
+import { usePayment } from '../hooks/usePayment';
+import { PayPalScriptProvider } from '@paypal/react-paypal-js';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 
 import { usePayment } from '../hooks/usePayment';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
-import { Elements as StripeElements } from '@stripe/stripe-js';
+import { Elements } from '@stripe/stripe-js';
 import { loadStripe } from '@stripe/stripe-js';
 
 
@@ -421,35 +421,111 @@ const Home = ({ user }) => {
 
         {/* Payment Section */}
         
-        {error && <div className="text-red-500">{error}</div>}
-      
-      <StripeElements stripe={stripePromise}>
-        {/* Your Stripe Elements components */}
-        <button 
-          onClick={() => handlePayment('stripe')}
-          disabled={loading}
-          className="bg-blue-500 text-white px-4 py-2 rounded"
-        >
-          {loading ? 'Processing...' : 'Pay with Card'}
-        </button>
-      </StripeElements>
+        <div className="bg-white rounded-lg shadow-lg transform transition-transform hover:scale-102 hover:shadow-2xl mt-5">
+          <div className="p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Premium Features</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Premium Plan Card */}
+              <div className="border rounded-lg p-6 bg-gradient-to-br from-purple-50 to-blue-50">
+                <h3 className="text-lg font-semibold mb-2">Premium Plan</h3>
+                <p className="text-gray-600 mb-4">Unlock all premium features and puzzles</p>
+                <div className="text-2xl font-bold text-blue-600 mb-4">$9.99/month</div>
+                <div className="space-y-3">
+                  {/* PayPal Button */}
+                  <button 
+                    onClick={() => handlePayment('paypal')}
+                    disabled={paymentLoading}
+                    className="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 
+                              transition duration-200 flex items-center justify-center 
+                              disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {paymentLoading ? (
+                      <span className="animate-spin mr-2">⌛</span>
+                    ) : (
+                      <img 
+                        src="https://www.paypalobjects.com/webstatic/en_US/i/buttons/PP_logo_h_100x26.png" 
+                        alt="PayPal" 
+                        className="h-6 mr-2"
+                      />
+                    )}
+                    Pay with PayPal
+                  </button>
 
-      <PayPalScriptProvider options={{ 
-        "client-id": import.meta.env.VITE_PAYPAL_CLIENT_ID,
-        currency: "USD"
-      }}>
-        <PayPalButtons 
-          createOrder={async () => {
-            const order = await handlePayPalPayment(amount);
-            return order.id;
-          }}
-          onApprove={async (data) => {
-            const result = await handlePayPalCapture(data.orderID);
-            console.log('Payment successful!', result);
-            // Handle successful payment
-          }}
-        />
-      </PayPalScriptProvider>
+                  {/* Stripe Button */}
+                  <button 
+                    onClick={() => handlePayment('stripe')}
+                    disabled={paymentLoading}
+                    className="w-full bg-purple-500 text-white py-2 px-4 rounded hover:bg-purple-600 
+                              transition duration-200 flex items-center justify-center
+                              disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {paymentLoading ? (
+                      <span className="animate-spin mr-2">⌛</span>
+                    ) : (
+                      <svg className="h-6 w-6 mr-2" viewBox="0 0 32 32">
+                        <path fill="#ffffff" d="M32 16c0 8.837-7.163 16-16 16S0 24.837 0 16 7.163 0 16 0s16 7.163 16 16"/>
+                      </svg>
+                    )}
+                    Pay with Card
+                  </button>
+                </div>
+
+                {/* Features List */}
+                <div className="mt-4">
+                  <h4 className="font-semibold mb-2">Included Features:</h4>
+                  <ul className="space-y-2">
+                    <li className="flex items-center text-gray-600">
+                      <span className="mr-2">✓</span> Unlimited puzzles
+                    </li>
+                    <li className="flex items-center text-gray-600">
+                      <span className="mr-2">✓</span> Custom difficulty levels
+                    </li>
+                    <li className="flex items-center text-gray-600">
+                      <span className="mr-2">✓</span> Ad-free experience
+                    </li>
+                    <li className="flex items-center text-gray-600">
+                      <span className="mr-2">✓</span> Priority support
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Benefits Section */}
+              <div className="border rounded-lg p-6 bg-gradient-to-br from-green-50 to-blue-50">
+                <h3 className="text-lg font-semibold mb-4">Why Go Premium?</h3>
+                <div className="space-y-4">
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <FaPuzzlePiece className="h-6 w-6 text-blue-500" />
+                    </div>
+                    <div className="ml-3">
+                      <h4 className="font-semibold">Enhanced Puzzle Library</h4>
+                      <p className="text-gray-600">Access to exclusive puzzle collections and themes</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <FaUsers className="h-6 w-6 text-green-500" />
+                    </div>
+                    <div className="ml-3">
+                      <h4 className="font-semibold">Multiplayer Features</h4>
+                      <p className="text-gray-600">Create private rooms and customize game settings</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start">
+                    <div className="flex-shrink-0">
+                      <FaTrophy className="h-6 w-6 text-yellow-500" />
+                    </div>
+                    <div className="ml-3">
+                      <h4 className="font-semibold">Advanced Statistics</h4>
+                      <p className="text-gray-600">Detailed progress tracking and achievements</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
     
       </div>
     </div>

@@ -15,6 +15,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@firebasegen/default-connector": "file:dataconnect-generated/js/default-connector",
     "@paypal/checkout-server-sdk": "^1.0.3",
+    "@paypal/react-paypal-js": "^8.8.1",
     "@react-spring/web": "^9.7.5",
     "@react-three/drei": "^9.121.2",
     "@react-three/fiber": "^8.17.12",
