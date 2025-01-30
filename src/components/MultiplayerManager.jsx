@@ -359,7 +359,7 @@ const MultiplayerManager = ({ gameId, isHost, user, image }) => {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     const ms = String(milliseconds % 1000).padStart(3, '0').slice(0, 2);
-    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${ms}`;
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   };
 
   // Add progress celebration effects
