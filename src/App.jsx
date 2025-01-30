@@ -14,6 +14,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from 'react-hot-toast';
 import { nanoid } from 'nanoid';
 import CollaborativePuzzle from './components/CollaborativePuzzle';
+import PaymentSuccess from './components/PaymentSuccess';
 
 // Enhanced MultiplayerPuzzle component with better game ID handling
 const MultiplayerPuzzle = () => {
@@ -152,6 +153,9 @@ const App = () => {
                 />
               }
             />
+
+            <Route path="/payment/success" element={<PaymentSuccess />} />
+            <Route path="/payment/cancel" element={<Navigate to="/home" />} />
 
             {/* Catch-all redirect */}
             <Route path="*" element={<Navigate to="/" replace />} />
