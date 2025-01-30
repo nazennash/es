@@ -14,7 +14,7 @@ import {
 import { nanoid } from 'nanoid';
 import QuickAccess from './QuickAccess';
 import toast from 'react-hot-toast';
-import { FaPuzzlePiece, FaTrophy, FaClock, FaSignOutAlt, FaChartBar, FaImage, FaGlobe, FaUsers } from 'react-icons/fa';
+import { FaPuzzlePiece, FaTrophy, FaClock, FaSignOutAlt, FaChartBar, FaImage, FaGlobe, FaUsers, FaCrown, FaCheck } from 'react-icons/fa';
 
 // Initialize Firestore
 const db = getFirestore();
@@ -374,6 +374,43 @@ const Home = ({ user }) => {
             ) : (
               <p className="text-gray-600">No puzzles completed yet. Start solving!</p>
             )}
+          </div>
+        </div>
+
+        {/* Premium Features Section */}
+        <div className="bg-white rounded-lg shadow-lg transform transition-transform hover:scale-102 hover:shadow-2xl mt-8">
+          <div className="p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
+              <FaCrown className="text-yellow-500 mr-2" />
+              Premium Features
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold">Unlock Amazing Features</h3>
+                <ul className="space-y-2">
+                  <li className="flex items-center text-gray-600">
+                    <FaCheck className="text-green-500 mr-2" />
+                    Create custom puzzles
+                  </li>
+                  <li className="flex items-center text-gray-600">
+                    <FaCheck className="text-green-500 mr-2" />
+                    Access exclusive themes
+                  </li>
+                  <li className="flex items-center text-gray-600">
+                    <FaCheck className="text-green-500 mr-2" />
+                    Multiplayer challenges
+                  </li>
+                </ul>
+              </div>
+              <div className="flex items-center justify-center">
+                <button
+                  onClick={() => navigate('/payment-plans')}
+                  className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-6 py-3 rounded-lg shadow-lg hover:from-purple-700 hover:to-blue-700 transform transition-transform hover:scale-105"
+                >
+                  View Premium Plans
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

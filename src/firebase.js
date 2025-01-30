@@ -5,9 +5,6 @@ import { getStorage } from 'firebase/storage';
 import { getDatabase, ref, set, onValue, update, remove, onDisconnect, push, runTransaction, get, increment } from 'firebase/database';
 import { nanoid } from 'nanoid';
 
-import { getFunctions } from 'firebase/functions';
-
-
 
 const firebaseConfig = {
     apiKey: "AIzaSyAuzyxG9Cs1ma9chjR-uJZegoMAc1Vp2Ig",
@@ -28,9 +25,6 @@ const storage = getStorage(app);
 // After Firebase initialization
 const db = getFirestore(app);
 const database = getDatabase(app);
-
-export const functions = getFunctions(app);
-
 
 export { 
   auth, 
