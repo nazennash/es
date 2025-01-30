@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { StripeService } from '../services/payments/stripeService.js';
-import { PayPalService } from '../services/payments/paypalService.js';
+import { StripeService } from '../services/payments/stripeService';
+import { PayPalService } from '../services/payments/paypalService';
 
 export const usePayment = () => {
   const [loading, setLoading] = useState(false);
