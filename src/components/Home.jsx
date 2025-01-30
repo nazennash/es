@@ -15,18 +15,6 @@ import { nanoid } from 'nanoid';
 import QuickAccess from './QuickAccess';
 import toast from 'react-hot-toast';
 import { FaPuzzlePiece, FaTrophy, FaClock, FaSignOutAlt, FaChartBar, FaImage, FaGlobe, FaUsers } from 'react-icons/fa';
-// import { loadStripe } from '@stripe/stripe-js';
-// import { usePayment } from '../hooks/usePayment';
-// import { PayPalScriptProvider } from '@paypal/react-paypal-js';
-
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
-
-
-import { usePayment } from '../hooks/usePayment';
-import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
-import { Elements as StripeElements } from '@stripe/stripe-js';
-import { loadStripe } from '@stripe/stripe-js';
-
 
 // Initialize Firestore
 const db = getFirestore();
@@ -181,36 +169,6 @@ const formatTime = (time) => {
 const Home = ({ user }) => {
   const navigate = useNavigate();
   const { recentPuzzles, stats, loading, error } = useUserData(user?.uid);
-
-  // const { handleStripePayment, handlePayPalPayment, loading:paymentLoading } = usePayment();
-  const { handleStripePayment, handlePayPalPayment, handlePayPalCapture, loading:paymentLoading } = usePayment();
-
-
-  // const { recentPuzzles, stats, loading, error } = useUserData(user?.uid);
-  // const { handleStripePayment, handlePayPalPayment, loading, error } = usePayment();
-  // const { handleStripePayment, handlePayPalPayment, loading: paymentLoading } = usePayment();
-  
-  
-  const handlePayment = async (method) => {
-    const amount = 9.99; // Your premium plan amount
-
-    try {
-      if (method === 'stripe') {
-        const result = await handleStripePayment(amount);
-        if (result.status === 'succeeded') {
-          // Handle successful payment
-          console.log('Payment successful!');
-        }
-      } else if (method === 'paypal') {
-        const order = await handlePayPalPayment(amount);
-        // PayPal will handle the rest through its button component
-      }
-    } catch (err) {
-      console.error('Payment failed:', err);
-    }
-  };
-
-  
 
   // Memoized Stats Section to prevent unnecessary re-renders
   const StatsSection = useMemo(() => (
@@ -418,39 +376,6 @@ const Home = ({ user }) => {
             )}
           </div>
         </div>
-
-        {/* Payment Section */}
-        
-        {error && <div className="text-red-500">{error}</div>}
-      
-      <StripeElements stripe={stripePromise}>
-        {/* Your Stripe Elements components */}
-        <button 
-          onClick={() => handlePayment('stripe')}
-          disabled={loading}
-          className="bg-blue-500 text-white px-4 py-2 rounded"
-        >
-          {loading ? 'Processing...' : 'Pay with Card'}
-        </button>
-      </StripeElements>
-
-      <PayPalScriptProvider options={{ 
-        "client-id": import.meta.env.VITE_PAYPAL_CLIENT_ID,
-        currency: "USD"
-      }}>
-        <PayPalButtons 
-          createOrder={async () => {
-            const order = await handlePayPalPayment(amount);
-            return order.id;
-          }}
-          onApprove={async (data) => {
-            const result = await handlePayPalCapture(data.orderID);
-            console.log('Payment successful!', result);
-            // Handle successful payment
-          }}
-        />
-      </PayPalScriptProvider>
-    
       </div>
     </div>
   );
